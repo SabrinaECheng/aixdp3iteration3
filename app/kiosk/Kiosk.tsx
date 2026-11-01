@@ -132,13 +132,15 @@ export default function Kiosk() {
       }
 
       if (!hand) {
+        // A swipe that carried the hand out of view is judged once it's been gone a moment.
+        const swipe = swipes.current?.lost(now);
+        if (swipe) onSwipe(swipe.dir);
         if (s.hasPos) {
           s.hasPos = false;
           s.trail = [];
           trailRef.current?.setAttribute("points", "");
           cursor?.style.setProperty("opacity", "0");
-          // Keep the swipe history: fast swipes blur and tracking often drops a frame or two
-          // mid-swipe. Old points age out of the detector's window on their own.
+          // The detector rides out a frame or two of lost tracking (fast swipes blur).
           setHandVisible(false);
         }
         return;

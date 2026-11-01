@@ -18,7 +18,9 @@ Visitors **swipe** with an open hand; the direction points at a region of the sh
 | No swipe for 12 s | The piece slides back and the overview returns |
 
 The opened piece breaks away from the shoe (attached pieces ride along), glows, and the rest fade back; its info appears
-bottom-left. A swipe needs about a third of the camera frame's height of travel within 0.4 s. Bringing the hand back
+bottom-left. Each swipe is judged as one whole stroke, from when the hand speeds up to when it slows down (or leaves the
+view), so fast flicks, slower deliberate swipes and curved swipes all work; it needs about a third of the camera
+frame's height of travel. Bringing the hand back
 after a swipe is ignored (even a couple of seconds later), as are raising a hand into view, slow movement, small
 jiggles and clearly diagonal moves. Swipe → part mapping lives in `SWIPE_REGIONS` in `lib/product.ts`; swipe sensitivity in `lib/swipe.ts`.
 
@@ -43,7 +45,7 @@ Staff keys: arrow keys act as swipes, `d` shows tracking FPS, how often the hand
 - `lib/product.ts` — product name and per-part copy. Swap this to demo another product.
 - `lib/shoe.ts` — sliced 3D shoe geometry (ported from the "B · Centre stage" design reference).
 - `lib/useHandTracking.ts` — webcam + MediaPipe loop; reports the fingertip and palm each frame; can be switched off.
-- `lib/swipe.ts` — turns palm positions into up / down / left / right swipes.
+- `lib/swipe.ts` — turns palm positions into up / down / left / right swipes, one whole stroke at a time.
 - `app/kiosk/Kiosk.tsx` — swipes, mouse hover hit-testing, pull-apart animation, attract mode, camera toggles, layout.
 - Tuning constants (detail hold time, hover settle time, easing speed, idle timeout…) are at the top of `Kiosk.tsx`.
 
