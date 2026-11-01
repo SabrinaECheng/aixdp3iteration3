@@ -46,14 +46,14 @@ export default function Kiosk() {
   const [anim, setAnim] = useState<Anim>({ focus: 0, pull: NO_PULL });
   const [flash, setFlash] = useState<{ dir: SwipeDir; n: number } | null>(null);
   const [debug, setDebug] = useState<string | null>(null); // 'd' shows the last swipe and near-miss, for tuning
-  const [showPointer, setShowPointer] = useState(false); // dot + trail for the hand, and the mouse cursor
+  const [showPointer, setShowPointer] = useState(false); // optional dot + trail following the hand
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const camCanvasRef = useRef<HTMLCanvasElement>(null);
   const cursorRef = useRef<HTMLDivElement>(null);
   const trailRef = useRef<SVGPolylineElement>(null);
   const swipes = useRef<SwipeDetector | null>(null);
-  const debugRef = useRef({ on: false, last: "no swipe yet", text: "" });
+  const debugRef = useRef({ on: false, last: "no swipe yet", text: "", since: 0, frames: 0, handFrames: 0, stats: "" });
 
   // Mutable interaction state that changes every frame and shouldn't re-render.
   const ix = useRef({
@@ -119,6 +119,18 @@ export default function Kiosk() {
       const now = performance.now();
       const cursor = cursorRef.current;
 
+      // 'd' readout: tracking rate and how often the hand is actually found help explain misses.
+      const dbg = debugRef.current;
+      if (dbg.on) {
+        dbg.frames++;
+        if (hand) dbg.handFrames++;
+        if (now - dbg.since >= 1000) {
+          dbg.stats = `${Math.round((dbg.frames * 1000) / (now - dbg.since))} FPS · HAND ${Math.round((100 * dbg.handFrames) / Math.max(dbg.frames, 1))}%`;
+          dbg.since = now;
+          dbg.frames = dbg.handFrames = 0;
+        }
+      }
+
       if (!hand) {
         if (s.hasPos) {
           s.hasPos = false;
@@ -136,11 +148,10 @@ export default function Kiosk() {
       const swipe = swipes.current.push(now, hand.palmX * hand.aspect, hand.palmY);
       if (swipe) onSwipe(swipe.dir);
 
-      const dbg = debugRef.current;
       if (dbg.on) {
         if (swipe) dbg.last = `${swipe.dir.toUpperCase()} (dx ${swipe.dx.toFixed(2)}, dy ${swipe.dy.toFixed(2)})`;
         const miss = swipes.current.miss;
-        const text = `LAST: ${dbg.last}${miss ? ` · MISSED: ${miss}` : ""}`;
+        const text = `${dbg.stats} · LAST: ${dbg.last}${miss ? ` · MISSED: ${miss}` : ""}`;
         if (text !== dbg.text) {
           dbg.text = text;
           setDebug(text);
@@ -320,7 +331,7 @@ export default function Kiosk() {
   };
 
   return (
-    <div className={styles.viewport} style={{ cursor: showPointer ? "default" : "none" }}>
+    <div className={styles.viewport}>
       <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
         <div aria-hidden="true" className={styles.frame} />
         <div className={styles.eyebrow}>
@@ -444,7 +455,7 @@ export default function Kiosk() {
             aria-pressed={showPointer}
             onClick={() => setShowPointer((v) => !v)}
           >
-            {showPointer ? "HIDE POINTER" : "SHOW POINTER"}
+            {showPointer ? "HIDE HAND DOT" : "SHOW HAND DOT"}
           </button>
           <button
             type="button"

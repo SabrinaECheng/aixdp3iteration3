@@ -24,8 +24,8 @@ jiggles and clearly diagonal moves. Swipe → part mapping lives in `SWIPE_REGIO
 
 **Mouse and touch** can't swipe, so they still hover / tap parts or their labels directly.
 
-**Pointer:** there is no on-screen hand dot or mouse cursor by default. `SHOW POINTER` (or `p`) shows a dot and trail
-following the palm, plus the mouse cursor.
+**Hand dot:** off by default, so the kiosk just responds to swipes. `SHOW HAND DOT` (or `p`) shows a dot and trail
+following the palm. The mouse cursor always shows normally.
 
 Prefer the previous point-and-hover hand interaction? It's preserved on the `hover-version` branch.
 
@@ -36,7 +36,7 @@ hand drawn on it, which is handy for staff setting up.
 **Camera on/off:** `TURN CAMERA OFF` (or `o`) releases the webcam entirely. Touch and mouse hover/click keep working the
 same way, so it still runs on a touchscreen or with no camera. `TURN CAMERA ON` starts tracking again.
 
-Staff keys: arrow keys act as swipes, `d` shows the last swipe and why the last near-swipe didn't count (for tuning), `p` shows/hides the pointer, `c` shows/hides the camera view, `o` turns the camera off/on, `f` toggles fullscreen.
+Staff keys: arrow keys act as swipes, `d` shows tracking FPS, how often the hand is found, the last swipe and why the last near-swipe didn't count (for tuning), `p` shows/hides the hand dot, `c` shows/hides the camera view, `o` turns the camera off/on, `f` toggles fullscreen.
 
 ## Code map
 
