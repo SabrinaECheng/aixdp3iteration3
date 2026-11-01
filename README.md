@@ -18,11 +18,18 @@ Visitors **swipe** with an open hand; the direction points at a region of the sh
 | No swipe for 12 s | The piece slides back and the overview returns |
 
 The opened piece breaks away from the shoe (attached pieces ride along), glows, and the rest fade back; its info appears
-bottom-left. Each swipe is judged as one whole stroke, from when the hand speeds up to when it slows down (or leaves the
-view), so fast flicks, slower deliberate swipes and curved swipes all work; it needs about a third of the camera
-frame's height of travel. Bringing the hand back
-after a swipe is ignored (even a couple of seconds later), as are raising a hand into view, slow movement, small
-jiggles and clearly diagonal moves. Swipe → part mapping lives in `SWIPE_REGIONS` in `lib/product.ts`; swipe sensitivity in `lib/swipe.ts`.
+bottom-left. Swipe → part mapping lives in `SWIPE_REGIONS` in `lib/product.ts`; swipe sensitivity in `lib/swipe.ts`.
+
+How swipes are read:
+
+- Each movement is judged as one whole stroke, from when the hand speeds up to when it slows down, so fast flicks,
+  slower deliberate swipes and curved swipes all work. A movement is split wherever the hand reverses direction.
+- Movements that follow each other closely (a wind-up the other way, the swipe, a quick return) are judged together as
+  one burst, ~0.3 s after the hand calms down. The first move wins unless a later one is clearly bigger, so a wind-up
+  never fires instead of the swipe after it. Four or more back-and-forth moves is waving, not a swipe.
+- Bringing the hand back after a swipe is ignored (even a couple of seconds later), as are raising a hand into view,
+  lowering an arm out of view, slow movement, small jiggles and clearly diagonal moves.
+- Start swipes with your hand already in view (around chest height): a swipe that starts below the view doesn't count.
 
 **Teach swipes (`t`):** walks you through swiping up, down, left and right 5 times each and records exactly how your
 hand moves, including how you bring it back. The review screen replays the recording with the default settings and with
