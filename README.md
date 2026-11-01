@@ -11,17 +11,21 @@ Visitors **swipe** with an open hand; the direction points at a region of the sh
 | Visitor does | Kiosk does |
 | --- | --- |
 | Nobody around, or nothing open | The whole shoe slowly rotates back and forth and floats, with an overview of the product |
-| Raises a hand | A dot follows their palm; hints around the shoe show ↑ TOP, ↓ SOLE, ← HEEL, TOE → |
+| Raises a hand | Hints around the shoe show ↑ TOP, ↓ SOLE, ← HEEL, TOE → |
 | Swipes up | The top opens: tongue, then laces, then upper on each further swipe up |
 | Swipes down | The sole opens: midsole, then outsole |
 | Swipes left / right | The heel / toe cap breaks away |
 | No swipe for 12 s | The piece slides back and the overview returns |
 
 The opened piece breaks away from the shoe (attached pieces ride along), glows, and the rest fade back; its info appears
-bottom-left. Bringing the hand back after a swipe is ignored, and slow movement, small jiggles and diagonal moves never
-count as swipes. Swipe → part mapping lives in `SWIPE_REGIONS` in `lib/product.ts`; swipe sensitivity in `lib/swipe.ts`.
+bottom-left. A swipe needs about a third of the camera frame's height of travel within 0.4 s. Bringing the hand back
+after a swipe is ignored (even a couple of seconds later), as are raising a hand into view, slow movement, small
+jiggles and clearly diagonal moves. Swipe → part mapping lives in `SWIPE_REGIONS` in `lib/product.ts`; swipe sensitivity in `lib/swipe.ts`.
 
 **Mouse and touch** can't swipe, so they still hover / tap parts or their labels directly.
+
+**Pointer:** there is no on-screen hand dot or mouse cursor by default. `SHOW POINTER` (or `p`) shows a dot and trail
+following the palm, plus the mouse cursor.
 
 Prefer the previous point-and-hover hand interaction? It's preserved on the `hover-version` branch.
 
@@ -32,7 +36,7 @@ hand drawn on it, which is handy for staff setting up.
 **Camera on/off:** `TURN CAMERA OFF` (or `o`) releases the webcam entirely. Touch and mouse hover/click keep working the
 same way, so it still runs on a touchscreen or with no camera. `TURN CAMERA ON` starts tracking again.
 
-Staff keys: arrow keys act as swipes, `d` shows the last detected swipe (for tuning), `c` shows/hides the camera view, `o` turns the camera off/on, `f` toggles fullscreen.
+Staff keys: arrow keys act as swipes, `d` shows the last swipe and why the last near-swipe didn't count (for tuning), `p` shows/hides the pointer, `c` shows/hides the camera view, `o` turns the camera off/on, `f` toggles fullscreen.
 
 ## Code map
 

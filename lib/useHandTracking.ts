@@ -85,7 +85,7 @@ export function useHandTracking(
             baseOptions: { modelAssetPath: MODEL_PATH, delegate },
             runningMode: "VIDEO",
             numHands: 1,
-            minHandDetectionConfidence: 0.6,
+            minHandDetectionConfidence: 0.5,
             minHandPresenceConfidence: 0.5,
             minTrackingConfidence: 0.5,
           });

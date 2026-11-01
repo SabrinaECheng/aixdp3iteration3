@@ -45,13 +45,15 @@ export default function Kiosk() {
   const [scale, setScale] = useState(1);
   const [anim, setAnim] = useState<Anim>({ focus: 0, pull: NO_PULL });
   const [flash, setFlash] = useState<{ dir: SwipeDir; n: number } | null>(null);
-  const [debug, setDebug] = useState<string | null>(null); // 'd' shows the last swipe, for tuning
+  const [debug, setDebug] = useState<string | null>(null); // 'd' shows the last swipe and near-miss, for tuning
+  const [showPointer, setShowPointer] = useState(false); // dot + trail for the hand, and the mouse cursor
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const camCanvasRef = useRef<HTMLCanvasElement>(null);
   const cursorRef = useRef<HTMLDivElement>(null);
   const trailRef = useRef<SVGPolylineElement>(null);
   const swipes = useRef<SwipeDetector | null>(null);
+  const debugRef = useRef({ on: false, last: "no swipe yet", text: "" });
 
   // Mutable interaction state that changes every frame and shouldn't re-render.
   const ix = useRef({
@@ -132,12 +134,20 @@ export default function Kiosk() {
 
       swipes.current ??= new SwipeDetector();
       const swipe = swipes.current.push(now, hand.palmX * hand.aspect, hand.palmY);
-      if (swipe) {
-        onSwipe(swipe.dir);
-        setDebug((d) => d !== null ? `${swipe.dir.toUpperCase()} · dx ${swipe.dx.toFixed(2)} dy ${swipe.dy.toFixed(2)}` : d);
+      if (swipe) onSwipe(swipe.dir);
+
+      const dbg = debugRef.current;
+      if (dbg.on) {
+        if (swipe) dbg.last = `${swipe.dir.toUpperCase()} (dx ${swipe.dx.toFixed(2)}, dy ${swipe.dy.toFixed(2)})`;
+        const miss = swipes.current.miss;
+        const text = `LAST: ${dbg.last}${miss ? ` · MISSED: ${miss}` : ""}`;
+        if (text !== dbg.text) {
+          dbg.text = text;
+          setDebug(text);
+        }
       }
 
-      // The on-screen dot follows the palm so visitors can see their swipe.
+      // The optional on-screen dot follows the palm.
       const span = 1 - HAND_MARGIN * 2;
       const tx = Math.min(Math.max((hand.palmX - HAND_MARGIN) / span, 0), 1) * window.innerWidth;
       const ty = Math.min(Math.max((hand.palmY - HAND_MARGIN) / span, 0), 1) * window.innerHeight;
@@ -191,7 +201,13 @@ export default function Kiosk() {
     };
     const key = (e: KeyboardEvent) => {
       if (KEY_DIRS[e.key]) onSwipe(KEY_DIRS[e.key]); // arrow keys act like swipes, for testing
-      if (e.key === "d") setDebug((d) => (d === null ? "no swipe yet" : null));
+      if (e.key === "d") {
+        const dbg = debugRef.current;
+        dbg.on = !dbg.on;
+        dbg.text = "";
+        setDebug(dbg.on ? `LAST: ${dbg.last}` : null);
+      }
+      if (e.key === "p") setShowPointer((v) => !v);
       if (e.key === "c") setShowSelf((v) => !v);
       if (e.key === "o") setCameraOn((v) => !v);
       if (e.key === "f") {
@@ -304,7 +320,7 @@ export default function Kiosk() {
   };
 
   return (
-    <div className={styles.viewport}>
+    <div className={styles.viewport} style={{ cursor: showPointer ? "default" : "none" }}>
       <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
         <div aria-hidden="true" className={styles.frame} />
         <div className={styles.eyebrow}>
@@ -425,6 +441,14 @@ export default function Kiosk() {
           <button
             type="button"
             className={styles.camToggle}
+            aria-pressed={showPointer}
+            onClick={() => setShowPointer((v) => !v)}
+          >
+            {showPointer ? "HIDE POINTER" : "SHOW POINTER"}
+          </button>
+          <button
+            type="button"
+            className={styles.camToggle}
             aria-pressed={!cameraOn}
             data-off={cameraOn ? undefined : ""}
             onClick={() => setCameraOn((v) => !v)}
@@ -434,16 +458,21 @@ export default function Kiosk() {
         </div>
       </div>
 
-      {/* Hand cursor lives outside the scaled stage so it maps 1:1 to the screen. */}
-      <svg className={styles.trail} aria-hidden="true">
-        <polyline ref={trailRef} fill="none" stroke={ACCENT} strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-      <div ref={cursorRef} className={styles.cursor} aria-hidden="true">
-        <svg width="64" height="64" viewBox="-32 -32 64 64">
-          <circle r="9" fill={ACCENT} />
-          <circle r="22" fill="none" stroke={ACCENT} strokeWidth="3" className={styles.cursorRing} />
-        </svg>
-      </div>
+      {/* Optional hand pointer (off by default: the kiosk just responds to swipes).
+          It lives outside the scaled stage so it maps 1:1 to the screen. */}
+      {showPointer && (
+        <>
+          <svg className={styles.trail} aria-hidden="true">
+            <polyline ref={trailRef} fill="none" stroke={ACCENT} strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <div ref={cursorRef} className={styles.cursor} aria-hidden="true">
+            <svg width="64" height="64" viewBox="-32 -32 64 64">
+              <circle r="9" fill={ACCENT} />
+              <circle r="22" fill="none" stroke={ACCENT} strokeWidth="3" className={styles.cursorRing} />
+            </svg>
+          </div>
+        </>
+      )}
     </div>
   );
 }
