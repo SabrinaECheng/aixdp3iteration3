@@ -58,7 +58,12 @@ export default function TeachSwipes({
     if (step < TEACH_PLAN.length) return null;
     const mine = deriveOptions(recs);
     const odd = statsOf(recs).filter((s) => s.cameOutAs && s.cameOutAs !== s.dir);
-    return { mine, before: score(recs, DEFAULT_SWIPE), after: score(recs, mine), odd };
+    // How often the camera actually saw the hand, and how often it sat near the bottom edge.
+    const frames = recs.flatMap((r) => r.frames);
+    const seen = frames.filter((f) => f[1] !== null);
+    const seenPct = Math.round((100 * seen.length) / Math.max(frames.length, 1));
+    const lowPct = Math.round((100 * seen.filter((f) => f[2]! > 0.78).length) / Math.max(seen.length, 1));
+    return { mine, before: score(recs, DEFAULT_SWIPE), after: score(recs, mine), odd, seenPct, lowPct };
   }, [step, recs]);
 
   const download = () => {
@@ -121,6 +126,14 @@ export default function TeachSwipes({
             })}
           </tbody>
         </table>
+        {review.seenPct < 80 && (
+          <div className={styles.teachSub} style={{ color: "#F5C9D6" }}>
+            The camera only saw your hand {review.seenPct}% of the time
+            {review.lowPct >= 20 ? `, and it was near the bottom of the view ${review.lowPct}% of that time` : ""}. Swipes
+            it can&apos;t see can&apos;t be recognised: keep your hand in the middle of the view (about chest height,
+            or sit further back) and teach again.
+          </div>
+        )}
         {review.odd.length > 0 && (
           <div className={styles.teachSub}>
             Heads-up: {review.odd.map((s) => `a ${s.dir} swipe moved mostly ${s.cameOutAs}`).join("; ")}.

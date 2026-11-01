@@ -86,8 +86,10 @@ export function useHandTracking(
             runningMode: "VIDEO",
             numHands: 1,
             minHandDetectionConfidence: 0.5,
-            minHandPresenceConfidence: 0.5,
-            minTrackingConfidence: 0.5,
+            // Lower than MediaPipe's defaults so it holds on to a blurry, fast-moving hand mid-swipe
+            // instead of dropping it (a new hand still needs the full detection confidence).
+            minHandPresenceConfidence: 0.3,
+            minTrackingConfidence: 0.3,
           });
         landmarker = await create("GPU").catch(() => create("CPU"));
         if (cancelled) {

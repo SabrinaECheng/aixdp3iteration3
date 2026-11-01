@@ -31,6 +31,12 @@ How swipes are read:
   lowering an arm out of view, slow movement, small jiggles and clearly diagonal moves.
 - Start swipes with your hand already in view (around chest height): a swipe that starts below the view doesn't count.
 
+**Keep the hand in the middle of the camera view.** MediaPipe loses a hand that sits near the edge of the view, and
+swipes arc downward, so a hand held low drops out of the bottom mid-swipe and the swipe is never seen. If the hand
+stays near an edge, the kiosk says so ("Raise your hand a little…"), and teach mode warns when the camera saw the hand
+less than 80% of the time. Tracking confidence is set below MediaPipe's defaults so a blurry, fast-moving hand is held
+on to rather than dropped.
+
 **Teach swipes (`t`):** walks you through swiping up, down, left and right 5 times each and records exactly how your
 hand moves, including how you bring it back. The review screen replays the recording with the default settings and with
 settings derived from your swipes, so you can see which recognises you better:

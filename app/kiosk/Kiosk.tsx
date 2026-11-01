@@ -22,6 +22,17 @@ const IDLE_MS = 9000; // no one around → attract mode
 const HAND_MARGIN = 0.12; // ignore the outer edge of the camera frame
 const SMOOTHING = 0.45;
 const TRAIL_LEN = 10;
+// The camera loses a hand that sits near the edge of its view (most often the bottom, where swipes
+// arc out of frame). Held there this long → ask the visitor to move it toward the middle.
+const EDGE_WARN_MS = 700;
+const EDGE_TIPS = {
+  low: "Raise your hand a little: the camera loses it near the bottom.",
+  high: "Lower your hand a little: the camera loses it near the top.",
+  side: "Move your hand toward the middle: the camera loses it near the sides.",
+} as const;
+type Edge = keyof typeof EDGE_TIPS;
+const edgeOf = (x: number, y: number): Edge | null =>
+  y > 0.78 ? "low" : y < 0.12 ? "high" : x < 0.1 || x > 0.9 ? "side" : null;
 // Easing time constants (seconds): smaller = snappier.
 const TAU_PULL = 0.2;
 const TAU_FOCUS = 0.3;
@@ -51,6 +62,7 @@ export default function Kiosk() {
   const [flash, setFlash] = useState<{ dir: SwipeDir; n: number } | null>(null);
   const [debug, setDebug] = useState<string | null>(null); // 'd' shows the last swipe and near-miss, for tuning
   const [showPointer, setShowPointer] = useState(false); // optional dot + trail following the hand
+  const [edge, setEdge] = useState<Edge | null>(null); // the hand keeps sitting near an edge of the camera view
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const camCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -73,6 +85,8 @@ export default function Kiosk() {
     active: null as PartId | null,
     pinned: false, // swiped / tapped / keyed parts stay open (no hover to keep them there)
     swipedAt: 0,
+    edge: null as Edge | null,
+    edgeSince: 0,
     mode: "attract" as Mode,
   });
 
@@ -171,6 +185,15 @@ export default function Kiosk() {
           setDebug(text);
         }
       }
+
+      // Hand kept near an edge of the camera view → tip to move it toward the middle.
+      const e = edgeOf(hand.palmX, hand.palmY);
+      if (e !== s.edge) {
+        s.edge = e;
+        s.edgeSince = now;
+      }
+      const warn = now - s.edgeSince >= EDGE_WARN_MS ? s.edge : undefined;
+      if (warn !== undefined) setEdge(warn);
 
       // The optional on-screen dot follows the palm.
       const span = 1 - HAND_MARGIN * 2;
@@ -343,11 +366,14 @@ export default function Kiosk() {
       : handVisible
         ? "SWIPE TO EXPLORE"
         : "RAISE A HAND, THEN SWIPE";
+  const tip = camOk && handVisible && edge ? EDGE_TIPS[edge] : null;
   const subline = !engaged
     ? "Every part of this shoe has a story. Take a look inside."
-    : camOk
-      ? "Up for the top, down for the sole, left for the heel, right for the toe."
-      : "Move over any part, or tap its name.";
+    : tip
+      ? tip
+      : camOk
+        ? "Up for the top, down for the sole, left for the heel, right for the toe."
+        : "Move over any part, or tap its name.";
 
   const label = (id: PartId) => {
     const on = id === active;
@@ -371,7 +397,9 @@ export default function Kiosk() {
           <span key={headline} className={styles.headlineTitle}>
             {headline}
           </span>
-          <span className={styles.headlineSub}>{subline}</span>
+          <span className={styles.headlineSub} style={tip ? { color: ACCENT } : undefined}>
+            {subline}
+          </span>
         </div>
 
         {/* The whole shoe sways and floats while no part is open; it holds still while one is,
