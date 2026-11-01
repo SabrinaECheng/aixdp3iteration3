@@ -23,8 +23,9 @@ export type SwipeOptions = {
   returnNear: number; // how close (frame heights) counts as "where the last swipe ended"
   maxGapMs: number; // tracking lost longer than this ends the stroke / starts fresh
   absentMs: number; // gone at least this long counts as the hand (re)appearing...
-  warmupMs: number; // ...and strokes starting this soon after are ignored (raising it into view)
-  exitFactor: number; // a stroke cut off by the hand leaving the view needs only this share of the distance
+  warmupMs: number; // ...and slow strokes starting this soon after are ignored (raising it into view)
+  entrySpeed: number; // ...but an upward stroke this fast is a real swipe that started below the view
+  exitFactor: number; // a stroke cut off by leaving the view needs only this share of the distance
 };
 
 export const DEFAULT_SWIPE: SwipeOptions = {
@@ -44,6 +45,7 @@ export const DEFAULT_SWIPE: SwipeOptions = {
   maxGapMs: 250,
   absentMs: 500,
   warmupMs: 300,
+  entrySpeed: 1.5,
   exitFactor: 0.75,
 };
 
@@ -60,6 +62,7 @@ export class SwipeDetector {
   private acquiredAt = -Infinity;
   private lockUntil = 0;
   private stroke: { start: Pt; end: Pt; peak: number; slowSince: number | null } | null = null;
+  // The last real movement, accepted or not: the hand coming back from it is never a swipe.
   private last: { dir: SwipeDir; t: number; end: Pt } | null = null;
   /** Why the most recent stroke didn't count (for on-screen tuning). */
   miss: string | null = null;
@@ -138,10 +141,27 @@ export class SwipeDetector {
     const ax = Math.abs(dx);
     const ay = Math.abs(dy);
     const travel = Math.max(ax, ay);
-    // Swiping out of the camera's view cuts the stroke short, so ask for a bit less.
-    const need = lostHand && s.slowSince === null ? o.distance * o.exitFactor : o.distance;
+    const main: SwipeDir = ax >= ay ? (dx > 0 ? "right" : "left") : dy > 0 ? "down" : "up";
 
-    if (s.start.t - this.acquiredAt < o.warmupMs) return this.reject("hand was just coming into view");
+    // The hand coming back from the last movement, even one that didn't count (e.g. an up swipe
+    // that started below the view): otherwise a missed up turns into a "down" on the way back.
+    if (this.last && main === OPPOSITE[this.last.dir]) {
+      const since = s.start.t - this.last.t;
+      const fromEnd = Math.hypot(s.start.rx - this.last.end.rx, s.start.ry - this.last.end.ry);
+      if (since < o.returnMs || (since < o.returnNearMs && fromEnd < o.returnNear)) {
+        return this.reject(`${main} ignored: hand coming back from ${this.last.dir}`);
+      }
+    }
+    if (travel >= o.distance * 0.5) this.last = { dir: main, t: s.end.t, end: s.end };
+
+    // Arms come in from below, so only a fast upward stroke counts straight after the hand appears.
+    // Swiping out of the camera's view cuts the stroke short, so ask for a bit less.
+    const entering = s.start.t - this.acquiredAt < o.warmupMs;
+    const enteringUp = entering && main === "up" && s.peak >= o.entrySpeed;
+    const exiting = lostHand && s.slowSince === null;
+    const need = exiting ? o.distance * o.exitFactor : o.distance;
+
+    if (entering && !enteringUp) return this.reject("hand was just coming into view");
     if (s.start.t < this.lockUntil) return this.reject("too soon after the last swipe");
     if (travel < need) return this.reject(`too short (${travel.toFixed(2)} of ${need.toFixed(2)})`);
     if (s.peak < o.minPeakSpeed) return this.reject(`too slow (${s.peak.toFixed(1)} of ${o.minPeakSpeed})`);
@@ -151,14 +171,6 @@ export class SwipeDetector {
     else if (ay > ax * o.dominance) dir = dy > 0 ? "down" : "up";
     if (!dir) return this.reject(`diagonal (dx ${dx.toFixed(2)}, dy ${dy.toFixed(2)})`);
 
-    if (this.last && dir === OPPOSITE[this.last.dir]) {
-      const since = s.start.t - this.last.t;
-      const fromEnd = Math.hypot(s.start.rx - this.last.end.rx, s.start.ry - this.last.end.ry);
-      if (since < o.returnMs || (since < o.returnNearMs && fromEnd < o.returnNear)) {
-        return this.reject(`${dir} ignored: hand coming back from ${this.last.dir}`);
-      }
-    }
-    this.last = { dir, t: s.end.t, end: s.end };
     this.lockUntil = s.end.t + o.cooldownMs;
     this.miss = null;
     return { dir, dx, dy };
