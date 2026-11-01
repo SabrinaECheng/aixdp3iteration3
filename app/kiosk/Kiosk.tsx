@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildHitLayers, buildShoe, NO_PULL } from "@/lib/shoe";
 import { LEFT_LABELS, PARTS, PART_ORDER, PRODUCT, RIGHT_LABELS, SWIPE_REGIONS, type PartId } from "@/lib/product";
-import { ReachDetector, type ReachState } from "@/lib/reach";
 import { DEFAULT_SWIPE, SwipeDetector, type SwipeDir } from "@/lib/swipe";
 import { hasSavedSwipeOptions, loadSwipeOptions, saveSwipeOptions } from "@/lib/swipeTeach";
 import { useHandTracking, type HandFrame } from "@/lib/useHandTracking";
@@ -43,10 +42,7 @@ export default function Kiosk() {
   const [active, setActive] = useState<PartId | null>(null);
   const [mode, setMode] = useState<Mode>("attract");
   const [handVisible, setHandVisible] = useState(false);
-  // How hands pick a direction: "reach" = rest in the middle, then move toward a side (default);
-  // "swipe" = judge the speed and direction of the movement ('m' switches).
-  const [gesture, setGesture] = useState<"reach" | "swipe">("reach");
-  const [teaching, setTeaching] = useState(false); // 't' (swipe mode): record how someone swipes and tune to it
+  const [teaching, setTeaching] = useState(false); // 't': record how someone swipes and tune to it
   const [hasSaved, setHasSaved] = useState(false);
   const [cameraOn, setCameraOn] = useState(true);
   const [showSelf, setShowSelf] = useState(false); // hidden self-view; tracking still runs
@@ -62,9 +58,6 @@ export default function Kiosk() {
   const trailRef = useRef<SVGPolylineElement>(null);
   const swipes = useRef<SwipeDetector | null>(null);
   const teachSink = useRef<TeachSink | null>(null); // set while the teach screen is open
-  const reach = useRef(new ReachDetector());
-  const gestureRef = useRef(gesture);
-  const hintRefs = useRef<Partial<Record<SwipeDir, HTMLDivElement | null>>>({});
   const debugRef = useRef({ on: false, last: "no swipe yet", text: "", since: 0, frames: 0, handFrames: 0, stats: "", taught: false });
 
   // Mutable interaction state that changes every frame and shouldn't re-render.
@@ -110,17 +103,6 @@ export default function Kiosk() {
     s.hoverSince = performance.now();
   }, []);
 
-  // Reach mode: the hint for the zone the hand is heading toward brightens as it gets closer,
-  // and all hints wake up once the hand is resting and ready.
-  const paintHints = useCallback((state: ReachState | null) => {
-    for (const dir of Object.keys(ARROWS) as SwipeDir[]) {
-      const el = hintRefs.current[dir];
-      if (!el) continue;
-      el.style.setProperty("--p", String(state && state.toward === dir ? state.progress : 0));
-      el.toggleAttribute("data-ready", !!state?.armed);
-    }
-  }, []);
-
   // ---- Swipes: each direction opens the next piece in that region of the shoe --
   const onSwipe = useCallback(
     (dir: SwipeDir) => {
@@ -157,13 +139,11 @@ export default function Kiosk() {
       // While teaching, frames go to the teach screen instead of opening parts.
       const teach = teachSink.current;
       if (teach) teach(now, hand ? hand.palmX * hand.aspect : null, hand ? hand.palmY : null);
-      const reaching = gestureRef.current === "reach";
 
       if (!hand) {
-        // A gesture that carried the hand out of view is judged once it's been gone a moment.
-        const dir = teach ? null : reaching ? reach.current.lost(now) : (swipes.current?.lost(now)?.dir ?? null);
-        if (dir) onSwipe(dir);
-        if (reaching) paintHints(reach.current.state);
+        // A swipe that carried the hand out of view is judged once it's been gone a moment.
+        const swipe = teach ? null : swipes.current?.lost(now);
+        if (swipe) onSwipe(swipe.dir);
         if (s.hasPos) {
           s.hasPos = false;
           s.trail = [];
@@ -179,24 +159,13 @@ export default function Kiosk() {
         swipes.current = new SwipeDetector(loadSwipeOptions()); // taught settings, if any
         dbg.taught = hasSavedSwipeOptions();
       }
-      let fired: SwipeDir | null = null;
-      if (teach) {
-        // recording only
-      } else if (reaching) {
-        fired = reach.current.push(now, hand.palmX, hand.palmY, hand.aspect);
-        paintHints(reach.current.state);
-        if (fired && dbg.on) dbg.last = fired.toUpperCase();
-      } else {
-        const swipe = swipes.current.push(now, hand.palmX * hand.aspect, hand.palmY);
-        fired = swipe?.dir ?? null;
-        if (swipe && dbg.on) dbg.last = `${swipe.dir.toUpperCase()} (dx ${swipe.dx.toFixed(2)}, dy ${swipe.dy.toFixed(2)})`;
-      }
-      if (fired) onSwipe(fired);
+      const swipe = teach ? null : swipes.current.push(now, hand.palmX * hand.aspect, hand.palmY);
+      if (swipe) onSwipe(swipe.dir);
 
       if (dbg.on) {
-        const miss = reaching ? reach.current.miss : swipes.current.miss;
-        const mode = reaching ? `REACH${reach.current.state.armed ? " (READY)" : ""}` : `SWIPE${dbg.taught ? " (MY SWIPES)" : ""}`;
-        const text = `${mode} · ${dbg.stats} · LAST: ${dbg.last}${miss ? ` · MISSED: ${miss}` : ""}`;
+        if (swipe) dbg.last = `${swipe.dir.toUpperCase()} (dx ${swipe.dx.toFixed(2)}, dy ${swipe.dy.toFixed(2)})`;
+        const miss = swipes.current.miss;
+        const text = `${dbg.taught ? "MY SWIPES · " : ""}${dbg.stats} · LAST: ${dbg.last}${miss ? ` · MISSED: ${miss}` : ""}`;
         if (text !== dbg.text) {
           dbg.text = text;
           setDebug(text);
@@ -231,7 +200,7 @@ export default function Kiosk() {
       if (s.trail.length > TRAIL_LEN) s.trail.shift();
       trailRef.current?.setAttribute("points", s.trail.map((p) => p.join(",")).join(" "));
     },
-    [onSwipe, clearHover, paintHints],
+    [onSwipe, clearHover],
   );
 
   const status = useHandTracking(videoRef, camCanvasRef, onHand, ACCENT, cameraOn);
@@ -267,16 +236,9 @@ export default function Kiosk() {
     };
     const key = (e: KeyboardEvent) => {
       if (KEY_DIRS[e.key] && !teachSink.current) onSwipe(KEY_DIRS[e.key]); // arrow keys act like swipes, for testing
-      if (e.key === "t" && gestureRef.current === "swipe") {
+      if (e.key === "t") {
         setHasSaved(hasSavedSwipeOptions());
         setTeaching((v) => !v);
-      }
-      if (e.key === "m" && !teachSink.current) {
-        const next = gestureRef.current === "reach" ? "swipe" : "reach";
-        gestureRef.current = next;
-        reach.current = new ReachDetector();
-        paintHints(null);
-        setGesture(next);
       }
       if (e.key === "Escape") setTeaching(false);
       if (e.key === "d") {
@@ -304,7 +266,7 @@ export default function Kiosk() {
       window.removeEventListener("keydown", key);
       document.documentElement.removeEventListener("pointerleave", leave);
     };
-  }, [activate, hoverAt, clearHover, onSwipe, paintHints]);
+  }, [activate, hoverAt, clearHover, onSwipe]);
 
   // ---- Animation loop: settle hover, ease pull / focus ----------------------
   useEffect(() => {
@@ -384,9 +346,7 @@ export default function Kiosk() {
   const subline = !engaged
     ? "Every part of this shoe has a story. Take a look inside."
     : camOk
-      ? gesture === "reach"
-        ? "Rest your hand in the middle, then move it up, down, left or right."
-        : "Up for the top, down for the sole, left for the heel, right for the toe."
+      ? "Up for the top, down for the sole, left for the heel, right for the toe."
       : "Move over any part, or tap its name.";
 
   const label = (id: PartId) => {
@@ -477,9 +437,6 @@ export default function Kiosk() {
           (Object.keys(SWIPE_REGIONS) as SwipeDir[]).map((dir) => (
             <div
               key={flash?.dir === dir ? `${dir}-${flash.n}` : dir}
-              ref={(el) => {
-                hintRefs.current[dir] = el;
-              }}
               className={styles.swipeHint}
               data-dir={dir}
               data-flash={flash?.dir === dir ? "" : undefined}

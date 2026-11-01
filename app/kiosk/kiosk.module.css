@@ -118,34 +118,26 @@
 }
 
 /* Swipe hints, placed on the side of the shoe each swipe opens. */
-/* --p (0..1, set per frame in reach mode): how close the hand is to that zone. */
 .swipeHint {
   position: absolute;
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.2em;
-  color: color-mix(in srgb, #ffffff calc(var(--p, 0) * 100%), #a9b0c3);
-  text-shadow: 0 0 calc(var(--p, 0) * 18px) rgba(191, 216, 255, var(--p, 0));
-  transform: var(--base, translate(0)) scale(calc(1 + 0.18 * var(--p, 0)));
-  opacity: 0.75;
+  color: #a9b0c3;
   white-space: nowrap;
-  transition: opacity 300ms ease;
-}
-
-.swipeHint[data-ready] {
-  opacity: 1;
+  transition: color 300ms ease, text-shadow 300ms ease;
 }
 
 .swipeHint[data-dir="up"] {
   left: 640px;
   top: 112px;
-  --base: translateX(-50%);
+  transform: translateX(-50%);
 }
 
 .swipeHint[data-dir="down"] {
   left: 640px;
   top: 622px;
-  --base: translateX(-50%);
+  transform: translateX(-50%);
 }
 
 .swipeHint[data-dir="left"] {

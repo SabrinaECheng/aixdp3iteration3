@@ -6,40 +6,25 @@ pointing at a part of the exploded shoe opens a short explainer for that part.
 
 ## How it works
 
-Visitors move a hand toward a side of the shoe; the direction points at a region of the shoe as it sits on screen.
+Visitors **swipe** with an open hand; the direction points at a region of the shoe as it sits on screen.
 
 | Visitor does | Kiosk does |
 | --- | --- |
 | Nobody around, or nothing open | The whole shoe slowly rotates back and forth and floats, with an overview of the product |
-| Raises a hand and rests it | Hints around the shoe wake up: ↑ TOP, ↓ SOLE, ← HEEL, TOE → |
-| Moves the hand up | The TOP hint brightens as the hand gets closer; the top opens (tongue, then laces, then upper on each further reach up) |
-| Moves the hand down | The sole opens: midsole, then outsole |
-| Moves the hand left / right | The heel / toe cap breaks away |
-| Nothing for 12 s | The piece slides back and the overview returns |
+| Raises a hand | Hints around the shoe show ↑ TOP, ↓ SOLE, ← HEEL, TOE → |
+| Swipes up | The top opens: tongue, then laces, then upper on each further swipe up |
+| Swipes down | The sole opens: midsole, then outsole |
+| Swipes left / right | The heel / toe cap breaks away |
+| No swipe for 12 s | The piece slides back and the overview returns |
 
 The opened piece breaks away from the shoe (attached pieces ride along), glows, and the rest fade back; its info appears
-bottom-left. Swipe → part mapping lives in `SWIPE_REGIONS` in `lib/product.ts`.
+bottom-left. Each swipe is judged as one whole stroke, from when the hand speeds up to when it slows down (or leaves the
+view), so fast flicks, slower deliberate swipes and curved swipes all work; it needs about a third of the camera
+frame's height of travel. Bringing the hand back
+after a swipe is ignored (even a couple of seconds later), as are raising a hand into view, slow movement, small
+jiggles and clearly diagonal moves. Swipe → part mapping lives in `SWIPE_REGIONS` in `lib/product.ts`; swipe sensitivity in `lib/swipe.ts`.
 
-### Reach mode (default, `lib/reach.ts`)
-
-Judges **where the hand goes**, not how fast it moves:
-
-- The hand gets *ready* by resting for a moment at its resting spot: the middle of the view, or wherever this visitor
-  first rests their hand (tall, short, standing off to one side).
-- Moving from there into the top, bottom, left or right zone fires that direction once, at the end of the reach (when the
-  hand stops or turns back). Fast flicks and slow reaches both work.
-- To go again, bring the hand back to the resting spot and pause. So the hand coming back, winding up, waving through the
-  middle, raising a hand into view and lowering an arm out of view never fire anything.
-- Reaching up past the top of the view still counts; dropping out of the bottom doesn't (that's an arm being lowered).
-- **Camera placement:** aim the camera so a visitor's lowered arm leaves the view (roughly chest-up framing). An arm
-  lowered to rest *inside* the view looks the same as reaching down and holding, and opens the sole.
-
-### Swipe mode (`m` to switch, `lib/swipe.ts`)
-
-Judges the speed and direction of each movement, one whole stroke at a time. The hand coming back after a swipe is
-ignored, as are raising a hand into view, slow movement, small jiggles and clearly diagonal moves.
-
-**Teach swipes (`t`, swipe mode):** walks you through swiping up, down, left and right 5 times each and records exactly how your
+**Teach swipes (`t`):** walks you through swiping up, down, left and right 5 times each and records exactly how your
 hand moves, including how you bring it back. The review screen replays the recording with the default settings and with
 settings derived from your swipes, so you can see which recognises you better:
 
@@ -66,15 +51,14 @@ hand drawn on it, which is handy for staff setting up.
 **Camera on/off:** `TURN CAMERA OFF` (or `o`) releases the webcam entirely. Touch and mouse hover/click keep working the
 same way, so it still runs on a touchscreen or with no camera. `TURN CAMERA ON` starts tracking again.
 
-Staff keys: arrow keys act as swipes, `m` switches reach / swipe mode, `t` teaches the kiosk your swipes (swipe mode), `d` shows tracking FPS, how often the hand is found, the last swipe and why the last near-swipe didn't count (for tuning), `p` shows/hides the hand dot, `c` shows/hides the camera view, `o` turns the camera off/on, `f` toggles fullscreen.
+Staff keys: arrow keys act as swipes, `t` teaches the kiosk your swipes, `d` shows tracking FPS, how often the hand is found, the last swipe and why the last near-swipe didn't count (for tuning), `p` shows/hides the hand dot, `c` shows/hides the camera view, `o` turns the camera off/on, `f` toggles fullscreen.
 
 ## Code map
 
 - `lib/product.ts` — product name and per-part copy. Swap this to demo another product.
 - `lib/shoe.ts` — sliced 3D shoe geometry (ported from the "B · Centre stage" design reference).
 - `lib/useHandTracking.ts` — webcam + MediaPipe loop; reports the fingertip and palm each frame; can be switched off.
-- `lib/reach.ts` — reach mode: turns palm positions into up / down / left / right by where the hand goes.
-- `lib/swipe.ts` — swipe mode: turns palm movement into swipes, one whole stroke at a time.
+- `lib/swipe.ts` — turns palm positions into up / down / left / right swipes, one whole stroke at a time.
 - `app/kiosk/Kiosk.tsx` — swipes, mouse hover hit-testing, pull-apart animation, attract mode, camera toggles, layout.
 - Tuning constants (detail hold time, hover settle time, easing speed, idle timeout…) are at the top of `Kiosk.tsx`.
 
