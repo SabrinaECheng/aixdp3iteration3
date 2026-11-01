@@ -21,6 +21,7 @@ export type SwipeOptions = {
   returnMs: number; // the opposite direction this soon after a swipe is the hand coming back
   returnNearMs: number; // ...and up to this long if it starts where the last swipe ended
   returnNear: number; // how close (frame heights) counts as "where the last swipe ended"
+  waveGapMs: number; // reversing direction within this long of the previous stroke is waving, not swiping
   maxGapMs: number; // tracking lost longer than this ends the stroke / starts fresh
   absentMs: number; // gone at least this long counts as the hand (re)appearing...
   warmupMs: number; // ...and slow strokes starting this soon after are ignored (raising it into view)
@@ -42,6 +43,7 @@ export const DEFAULT_SWIPE: SwipeOptions = {
   returnMs: 1500,
   returnNearMs: 3000,
   returnNear: 0.15,
+  waveGapMs: 250,
   maxGapMs: 250,
   absentMs: 500,
   warmupMs: 300,
@@ -49,9 +51,16 @@ export const DEFAULT_SWIPE: SwipeOptions = {
   exitFactor: 0.75,
 };
 
-const OPPOSITE: Record<SwipeDir, SwipeDir> = { up: "down", down: "up", left: "right", right: "left" };
+export const OPPOSITE: Record<SwipeDir, SwipeDir> = { up: "down", down: "up", left: "right", right: "left" };
 
-export type Swipe = { dir: SwipeDir; dx: number; dy: number };
+export type Swipe = {
+  dir: SwipeDir;
+  dx: number; // travel, in frame heights
+  dy: number;
+  peak: number; // top speed, frame heights / s
+  ms: number; // how long the stroke took
+  at: number; // when it ended
+};
 
 // x/y are smoothed (for steady speed readings); rx/ry are raw (for true distance travelled).
 type Pt = { t: number; x: number; y: number; rx: number; ry: number };
@@ -64,6 +73,8 @@ export class SwipeDetector {
   private stroke: { start: Pt; end: Pt; peak: number; slowSince: number | null } | null = null;
   // The last real movement, accepted or not: the hand coming back from it is never a swipe.
   private last: { dir: SwipeDir; t: number; end: Pt } | null = null;
+  // The previous stroke of any kind (returns included), to spot back-and-forth waving.
+  private prev: { dir: SwipeDir; t: number } | null = null;
   /** Why the most recent stroke didn't count (for on-screen tuning). */
   miss: string | null = null;
 
@@ -143,6 +154,9 @@ export class SwipeDetector {
     const travel = Math.max(ax, ay);
     const main: SwipeDir = ax >= ay ? (dx > 0 ? "right" : "left") : dy > 0 ? "down" : "up";
 
+    const reversal = !!this.prev && main === OPPOSITE[this.prev.dir] && s.start.t - this.prev.t < o.waveGapMs;
+    if (travel >= o.distance * 0.5) this.prev = { dir: main, t: s.end.t };
+
     // The hand coming back from the last movement, even one that didn't count (e.g. an up swipe
     // that started below the view): otherwise a missed up turns into a "down" on the way back.
     if (this.last && main === OPPOSITE[this.last.dir]) {
@@ -152,6 +166,8 @@ export class SwipeDetector {
         return this.reject(`${main} ignored: hand coming back from ${this.last.dir}`);
       }
     }
+    // A quick back-and-forth (waving hello) opens at most one part, not one per wave.
+    if (reversal) return this.reject("waving (quick back-and-forth)");
     if (travel >= o.distance * 0.5) this.last = { dir: main, t: s.end.t, end: s.end };
 
     // Arms come in from below, so only a fast upward stroke counts straight after the hand appears.
@@ -173,7 +189,7 @@ export class SwipeDetector {
 
     this.lockUntil = s.end.t + o.cooldownMs;
     this.miss = null;
-    return { dir, dx, dy };
+    return { dir, dx, dy, peak: s.peak, ms: s.end.t - s.start.t, at: s.end.t };
   }
 
   private reject(why: string) {

@@ -331,6 +331,82 @@ video.camVideo {
   color: #f5c9d6;
 }
 
+/* Teach swipes screen (staff, 't'). */
+.teach {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: rgba(19, 24, 38, 0.94);
+  text-align: center;
+}
+
+.teachEyebrow {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  color: #a9b0c3;
+}
+
+.teachArrow {
+  font-size: 140px;
+  line-height: 1;
+  color: #dce6ff;
+  animation: rise 400ms ease-out both;
+  transition: color 200ms ease, text-shadow 200ms ease;
+}
+
+.teachArrow[data-got] {
+  color: #bfd8ff;
+  text-shadow: 0 0 30px #bfd8ff;
+}
+
+.teachTitle {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.teachSub {
+  max-width: 720px;
+  font-size: 16px;
+  color: #c9cedd;
+}
+
+.teachTable {
+  border-collapse: collapse;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+}
+
+.teachTable th,
+.teachTable td {
+  padding: 8px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.teachTable th {
+  font-weight: 600;
+  color: #a9b0c3;
+}
+
+.teachTable td:first-child {
+  text-align: left;
+  color: #a9b0c3;
+}
+
+.teachButtons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
 .cursor {
   position: fixed;
   left: -32px;

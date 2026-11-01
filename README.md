@@ -24,6 +24,19 @@ frame's height of travel. Bringing the hand back
 after a swipe is ignored (even a couple of seconds later), as are raising a hand into view, slow movement, small
 jiggles and clearly diagonal moves. Swipe → part mapping lives in `SWIPE_REGIONS` in `lib/product.ts`; swipe sensitivity in `lib/swipe.ts`.
 
+**Teach swipes (`t`):** walks you through swiping up, down, left and right 5 times each and records exactly how your
+hand moves, including how you bring it back. The review screen replays the recording with the default settings and with
+settings derived from your swipes, so you can see which recognises you better:
+
+- `USE MY SWIPES` keeps the derived settings on this machine (browser storage); `BACK TO DEFAULT` undoes it.
+- `DOWNLOAD RECORDING` saves the raw recording as a small JSON file, which can be turned into permanent defaults and
+  regression tests.
+- Very small swipes need loose settings, and loose settings can also be set off by waving; a long wave still opens at
+  most one part.
+
+The `d` readout shows `MY SWIPES` when taught settings are active. Logic lives in `lib/swipeTeach.ts`; the screen in
+`app/kiosk/TeachSwipes.tsx`.
+
 **Mouse and touch** can't swipe, so they still hover / tap parts or their labels directly.
 
 **Hand dot:** off by default, so the kiosk just responds to swipes. `SHOW HAND DOT` (or `p`) shows a dot and trail
@@ -38,7 +51,7 @@ hand drawn on it, which is handy for staff setting up.
 **Camera on/off:** `TURN CAMERA OFF` (or `o`) releases the webcam entirely. Touch and mouse hover/click keep working the
 same way, so it still runs on a touchscreen or with no camera. `TURN CAMERA ON` starts tracking again.
 
-Staff keys: arrow keys act as swipes, `d` shows tracking FPS, how often the hand is found, the last swipe and why the last near-swipe didn't count (for tuning), `p` shows/hides the hand dot, `c` shows/hides the camera view, `o` turns the camera off/on, `f` toggles fullscreen.
+Staff keys: arrow keys act as swipes, `t` teaches the kiosk your swipes, `d` shows tracking FPS, how often the hand is found, the last swipe and why the last near-swipe didn't count (for tuning), `p` shows/hides the hand dot, `c` shows/hides the camera view, `o` turns the camera off/on, `f` toggles fullscreen.
 
 ## Code map
 

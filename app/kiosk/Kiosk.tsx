@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildHitLayers, buildShoe, NO_PULL } from "@/lib/shoe";
 import { LEFT_LABELS, PARTS, PART_ORDER, PRODUCT, RIGHT_LABELS, SWIPE_REGIONS, type PartId } from "@/lib/product";
-import { SwipeDetector, type SwipeDir } from "@/lib/swipe";
+import { DEFAULT_SWIPE, SwipeDetector, type SwipeDir } from "@/lib/swipe";
+import { hasSavedSwipeOptions, loadSwipeOptions, saveSwipeOptions } from "@/lib/swipeTeach";
 import { useHandTracking, type HandFrame } from "@/lib/useHandTracking";
 import styles from "./kiosk.module.css";
+import TeachSwipes, { type TeachResult, type TeachSink } from "./TeachSwipes";
 
 const ACCENT = "#BFD8FF";
 const STAGE_W = 1280;
@@ -40,6 +42,8 @@ export default function Kiosk() {
   const [active, setActive] = useState<PartId | null>(null);
   const [mode, setMode] = useState<Mode>("attract");
   const [handVisible, setHandVisible] = useState(false);
+  const [teaching, setTeaching] = useState(false); // 't': record how someone swipes and tune to it
+  const [hasSaved, setHasSaved] = useState(false);
   const [cameraOn, setCameraOn] = useState(true);
   const [showSelf, setShowSelf] = useState(false); // hidden self-view; tracking still runs
   const [scale, setScale] = useState(1);
@@ -53,7 +57,8 @@ export default function Kiosk() {
   const cursorRef = useRef<HTMLDivElement>(null);
   const trailRef = useRef<SVGPolylineElement>(null);
   const swipes = useRef<SwipeDetector | null>(null);
-  const debugRef = useRef({ on: false, last: "no swipe yet", text: "", since: 0, frames: 0, handFrames: 0, stats: "" });
+  const teachSink = useRef<TeachSink | null>(null); // set while the teach screen is open
+  const debugRef = useRef({ on: false, last: "no swipe yet", text: "", since: 0, frames: 0, handFrames: 0, stats: "", taught: false });
 
   // Mutable interaction state that changes every frame and shouldn't re-render.
   const ix = useRef({
@@ -131,9 +136,13 @@ export default function Kiosk() {
         }
       }
 
+      // While teaching, frames go to the teach screen instead of opening parts.
+      const teach = teachSink.current;
+      if (teach) teach(now, hand ? hand.palmX * hand.aspect : null, hand ? hand.palmY : null);
+
       if (!hand) {
         // A swipe that carried the hand out of view is judged once it's been gone a moment.
-        const swipe = swipes.current?.lost(now);
+        const swipe = teach ? null : swipes.current?.lost(now);
         if (swipe) onSwipe(swipe.dir);
         if (s.hasPos) {
           s.hasPos = false;
@@ -146,14 +155,17 @@ export default function Kiosk() {
         return;
       }
 
-      swipes.current ??= new SwipeDetector();
-      const swipe = swipes.current.push(now, hand.palmX * hand.aspect, hand.palmY);
+      if (!swipes.current) {
+        swipes.current = new SwipeDetector(loadSwipeOptions()); // taught settings, if any
+        dbg.taught = hasSavedSwipeOptions();
+      }
+      const swipe = teach ? null : swipes.current.push(now, hand.palmX * hand.aspect, hand.palmY);
       if (swipe) onSwipe(swipe.dir);
 
       if (dbg.on) {
         if (swipe) dbg.last = `${swipe.dir.toUpperCase()} (dx ${swipe.dx.toFixed(2)}, dy ${swipe.dy.toFixed(2)})`;
         const miss = swipes.current.miss;
-        const text = `${dbg.stats} · LAST: ${dbg.last}${miss ? ` · MISSED: ${miss}` : ""}`;
+        const text = `${dbg.taught ? "MY SWIPES · " : ""}${dbg.stats} · LAST: ${dbg.last}${miss ? ` · MISSED: ${miss}` : ""}`;
         if (text !== dbg.text) {
           dbg.text = text;
           setDebug(text);
@@ -194,6 +206,16 @@ export default function Kiosk() {
   const status = useHandTracking(videoRef, camCanvasRef, onHand, ACCENT, cameraOn);
   const camOk = status !== "off" && status !== "no-camera" && status !== "error";
 
+  const onTeachClose = useCallback((result: TeachResult) => {
+    if (result) {
+      const options = result === "reset" ? null : result;
+      saveSwipeOptions(options); // kept on this machine
+      swipes.current = new SwipeDetector(options ?? DEFAULT_SWIPE);
+      debugRef.current.taught = !!options;
+    }
+    setTeaching(false);
+  }, []);
+
   // ---- Mouse / touch (staff testing, touchscreens, camera off) -------------
   useEffect(() => {
     const move = (e: PointerEvent) => {
@@ -213,7 +235,12 @@ export default function Kiosk() {
       activate(part);
     };
     const key = (e: KeyboardEvent) => {
-      if (KEY_DIRS[e.key]) onSwipe(KEY_DIRS[e.key]); // arrow keys act like swipes, for testing
+      if (KEY_DIRS[e.key] && !teachSink.current) onSwipe(KEY_DIRS[e.key]); // arrow keys act like swipes, for testing
+      if (e.key === "t") {
+        setHasSaved(hasSavedSwipeOptions());
+        setTeaching((v) => !v);
+      }
+      if (e.key === "Escape") setTeaching(false);
       if (e.key === "d") {
         const dbg = debugRef.current;
         dbg.on = !dbg.on;
@@ -309,7 +336,7 @@ export default function Kiosk() {
   const motion = active ? "paused" : "running";
   const headline = !engaged
     ? camOk
-      ? "WAVE YOUR HAND TO EXPLORE"
+      ? "RAISE A HAND TO EXPLORE"
       : "TOUCH TO EXPLORE"
     : !camOk
       ? "HOVER OVER A PART"
@@ -469,6 +496,10 @@ export default function Kiosk() {
             {cameraOn ? "TURN CAMERA OFF" : "TURN CAMERA ON"}
           </button>
         </div>
+
+        {teaching && camOk && (
+          <TeachSwipes sinkRef={teachSink} handVisible={handVisible} hasSaved={hasSaved} onClose={onTeachClose} />
+        )}
       </div>
 
       {/* Optional hand pointer (off by default: the kiosk just responds to swipes).
