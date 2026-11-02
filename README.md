@@ -23,11 +23,15 @@ bottom-left. Swipe → part mapping lives in `SWIPE_REGIONS` in `lib/product.ts`
 How swipes are read:
 
 - Each movement is judged as one whole stroke, from when the hand speeds up to when it slows down, so fast flicks,
-  slower deliberate swipes and curved swipes all work. A movement is split wherever the hand reverses direction.
+  slower deliberate swipes and curved swipes all work. A movement is split wherever the hand reverses direction, and
+  measured to its furthest point, so a quick flick that springs back still counts in full.
+- Up / down swipes need less travel than left / right ones (people swipe shorter vertically): 0.15 vs 0.22 of the
+  camera frame's height.
 - Movements that follow each other closely (a wind-up the other way, the swipe, a quick return) are judged together as
   one burst, ~0.3 s after the hand calms down. The first move wins unless a later one is clearly bigger, so a wind-up
   never fires instead of the swipe after it. Four or more back-and-forth moves is waving, not a swipe.
-- Bringing the hand back after a swipe is ignored (even a couple of seconds later), as are raising a hand into view,
+- Bringing the hand back after a swipe is ignored (even a couple of seconds later) unless it's much faster *and*
+  longer than the movement before it (then it's a real swipe, e.g. after a small wind-up), as are raising a hand into view,
   lowering an arm out of view, slow movement, small jiggles and clearly diagonal moves.
 - Start swipes with your hand already in view (around chest height): a swipe that starts below the view doesn't count.
 

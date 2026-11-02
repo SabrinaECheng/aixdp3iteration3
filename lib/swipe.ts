@@ -19,7 +19,10 @@ export type SwipeOptions = {
   endSpeed: number; // ...and ends once below this speed
   endHoldMs: number; // ...for at least this long
   maxStrokeMs: number; // a stroke longer than this is judged anyway
-  distance: number; // minimum travel along the main axis, in frame heights
+  distance: number; // minimum travel for a left / right swipe, in frame heights
+  distanceVertical: number; // ...and for an up / down swipe (people swipe shorter vertically)
+  returnSpeed: number; // a movement this much faster than the one before...
+  returnSize: number; // ...and this much longer isn't the hand coming back from it: it's a new swipe
   minPeakSpeed: number; // the stroke must reach this speed somewhere (rules out slow repositioning)
   dominance: number; // main axis must beat the other axis by this factor
   cooldownMs: number; // ignore new strokes this long after a swipe
@@ -44,6 +47,9 @@ export const DEFAULT_SWIPE: SwipeOptions = {
   endHoldMs: 60,
   maxStrokeMs: 1200,
   distance: 0.22,
+  distanceVertical: 0.15,
+  returnSpeed: 1.5,
+  returnSize: 1.3,
   minPeakSpeed: 0.85,
   dominance: 1.3,
   cooldownMs: 250,
@@ -90,9 +96,10 @@ export class SwipeDetector {
   private lastT = -Infinity;
   private acquiredAt = -Infinity;
   private lockUntil = 0;
-  private stroke: { start: Pt; end: Pt; peak: number; slowSince: number | null } | null = null;
+  // far = the point furthest from the start, so a flick that springs back still counts in full.
+  private stroke: { start: Pt; end: Pt; far: Pt; peak: number; slowSince: number | null } | null = null;
   // The last real movement, accepted or not: the hand coming back from it is never a swipe.
-  private last: { dir: SwipeDir; t: number; end: Pt; returned: boolean } | null = null;
+  private last: { dir: SwipeDir; t: number; end: Pt; peak: number; travel: number; returned: boolean } | null = null;
   // The current burst of strokes, decided once the hand has been calm for groupGapMs.
   private group: { strokes: Stroke[]; lastEnd: number; lastBefore: SwipeDetector["last"] } | null = null;
   /** Why the most recent stroke didn't count (for on-screen tuning). */
@@ -124,7 +131,7 @@ export class SwipeDetector {
         // Walk back to where the hand actually started moving.
         let i = this.hist.length - 1;
         while (i > 0 && this.stepSpeed(i) > o.endSpeed) i--;
-        this.stroke = { start: this.hist[i], end: p, peak: speed, slowSince: null };
+        this.stroke = { start: this.hist[i], end: p, far: p, peak: speed, slowSince: null };
       }
       return this.decide(t);
     }
@@ -139,10 +146,12 @@ export class SwipeDetector {
     if (speed > o.startSpeed && Math.hypot(sx, sy) > o.minMove && along < -0.5 * speed * Math.hypot(sx, sy)) {
       const turn = s.end;
       this.finish();
-      this.stroke = { start: turn, end: p, peak: speed, slowSince: null };
+      this.stroke = { start: turn, end: p, far: p, peak: speed, slowSince: null };
       return this.decide(t);
     }
     s.end = p;
+    const reach = (q: Pt) => Math.hypot(q.rx - s.start.rx, q.ry - s.start.ry);
+    if (reach(p) > reach(s.far)) s.far = p;
     s.peak = Math.max(s.peak, speed);
     if (speed < o.endSpeed) s.slowSince ??= t;
     else s.slowSince = null;
@@ -183,8 +192,9 @@ export class SwipeDetector {
     this.stroke = null;
     if (!s) return;
     const o = this.o;
-    const dx = s.end.rx - s.start.rx;
-    const dy = s.end.ry - s.start.ry;
+    // Measure to the furthest point: a quick flick often springs back a little before the hand stops.
+    const dx = s.far.rx - s.start.rx;
+    const dy = s.far.ry - s.start.ry;
     const ax = Math.abs(dx);
     const ay = Math.abs(dy);
     const travel = Math.max(ax, ay);
@@ -196,7 +206,8 @@ export class SwipeDetector {
     // Swiping out of the top or sides cuts the stroke short, so ask for a bit less there.
     const entering = s.start.t - this.acquiredAt < o.warmupMs;
     const exiting = lostHand && s.slowSince === null;
-    const need = exiting ? o.distance * o.exitFactor : o.distance;
+    const base = dir === "up" || dir === "down" ? o.distanceVertical : o.distance;
+    const need = exiting ? base * o.exitFactor : base;
     const minor = Math.min(ax, ay);
     const reason = entering
       ? "hand was just coming into view"
@@ -212,7 +223,7 @@ export class SwipeDetector {
                 ? `diagonal (dx ${dx.toFixed(2)}, dy ${dy.toFixed(2)})`
                 : null;
 
-    const stroke: Stroke = { dir, dx, dy, travel, peak: s.peak, start: s.start, end: s.end, reason };
+    const stroke: Stroke = { dir, dx, dy, travel, peak: s.peak, start: s.start, end: { ...s.far, t: s.end.t }, reason };
     this.group ??= { strokes: [], lastEnd: 0, lastBefore: this.last };
     this.group.strokes.push(stroke);
     this.group.lastEnd = s.end.t;
@@ -236,6 +247,9 @@ export class SwipeDetector {
     const isReturn = (s: Stroke) => {
       // Once the hand has come back, the next opposite movement is a real swipe (often after a wind-up).
       if (!last || last.returned || s.dir !== OPPOSITE[last.dir]) return false;
+      // Bringing a hand back covers about the same ground as the movement out; one that's much faster
+      // and longer (e.g. the swipe after a small wind-up) is a real swipe.
+      if (s.peak > last.peak * o.returnSpeed && s.travel > last.travel * o.returnSize) return false;
       const since = s.start.t - last.t;
       const fromEnd = Math.hypot(s.start.rx - last.end.rx, s.start.ry - last.end.ry);
       return since < o.returnMs || (since < o.returnNearMs && fromEnd < o.returnNear);
@@ -243,7 +257,9 @@ export class SwipeDetector {
     // Remember real movements (even ones too small to count), never the hand coming back:
     // that would block the next swipe in the same direction as the last one.
     const remember = (s: Stroke) => {
-      if (s.travel >= o.distance * 0.5 && !isReturn(s)) this.last = { dir: s.dir, t: s.end.t, end: s.end, returned: false };
+      if (s.travel >= Math.min(o.distance, o.distanceVertical) * 0.5 && !isReturn(s)) {
+        this.last = { dir: s.dir, t: s.end.t, end: s.end, peak: s.peak, travel: s.travel, returned: false };
+      }
     };
     const cameBack = g.strokes.some(isReturn);
 

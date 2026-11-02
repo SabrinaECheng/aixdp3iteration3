@@ -122,6 +122,10 @@ export function statsOf(recs: Recording[]): StrokeStats[] {
 }
 
 /** Detector settings that fit this person's swipes, with a safety margin. */
+// Minimum travel for one axis from how far this person's swipes went that way, with a margin.
+const axisDistance = (st: StrokeStats[], fallback: number) =>
+  st.length >= 2 ? clamp(0.65 * low(st.map((s) => s.along)), 0.1, 0.36) : fallback;
+
 export function deriveOptions(recs: Recording[]): SwipeOptions {
   const st = statsOf(recs).filter((s) => s.along > 0.08);
   if (st.length < 4) return DEFAULT_SWIPE;
@@ -130,7 +134,8 @@ export function deriveOptions(recs: Recording[]): SwipeOptions {
   const startSpeed = clamp(0.75 * minPeakSpeed, 0.35, 0.7);
   return {
     ...DEFAULT_SWIPE,
-    distance: clamp(0.65 * low(st.map((s) => s.along)), 0.15, 0.36),
+    distance: axisDistance(st.filter((s) => s.dir === "left" || s.dir === "right"), DEFAULT_SWIPE.distance),
+    distanceVertical: axisDistance(st.filter((s) => s.dir === "up" || s.dir === "down"), DEFAULT_SWIPE.distanceVertical),
     minPeakSpeed,
     startSpeed,
     endSpeed: startSpeed / 2,
