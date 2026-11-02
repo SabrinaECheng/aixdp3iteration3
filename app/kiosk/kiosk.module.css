@@ -117,56 +117,53 @@
   pointer-events: all;
 }
 
-/* Swipe hints, placed on the side of the shoe each swipe opens. */
-.swipeHint {
+/* Top-right switch: hands point at parts (off) or swipe (on). */
+.modeToggle {
   position: absolute;
-  font-size: 14px;
+  right: 56px;
+  top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #d6dae6;
+  font: inherit;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.2em;
-  color: #a9b0c3;
-  white-space: nowrap;
-  transition: color 300ms ease, text-shadow 300ms ease;
+  letter-spacing: 0.16em;
+  cursor: pointer;
 }
 
-.swipeHint[data-dir="up"] {
-  left: 640px;
-  top: 112px;
-  transform: translateX(-50%);
+.switchTrack {
+  position: relative;
+  width: 30px;
+  height: 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+  transition: background 200ms ease;
 }
 
-.swipeHint[data-dir="down"] {
-  left: 640px;
-  top: 622px;
-  transform: translateX(-50%);
+.switchKnob {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #d6dae6;
+  transition: transform 200ms ease, background 200ms ease;
 }
 
-.swipeHint[data-dir="left"] {
-  left: 236px;
-  top: 452px;
+.modeToggle[aria-checked="true"] .switchTrack {
+  background: #bfd8ff;
 }
 
-.swipeHint[data-dir="right"] {
-  right: 236px;
-  top: 452px;
-}
-
-.swipeHint[data-on] {
-  color: #dce6ff;
-}
-
-.swipeHint[data-flash] {
-  animation: hint-flash 700ms ease-out;
-}
-
-@keyframes hint-flash {
-  0% {
-    color: #ffffff;
-    text-shadow: 0 0 14px #bfd8ff;
-    letter-spacing: 0.32em;
-  }
-  100% {
-    letter-spacing: 0.2em;
-  }
+.modeToggle[aria-checked="true"] .switchKnob {
+  transform: translateX(14px);
+  background: #131826;
 }
 
 .labelsLeft,

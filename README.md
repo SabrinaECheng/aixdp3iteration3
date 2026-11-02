@@ -6,19 +6,21 @@ pointing at a part of the exploded shoe opens a short explainer for that part.
 
 ## How it works
 
-Visitors **swipe** with an open hand; the direction points at a region of the shoe as it sits on screen.
+Two hand modes, switched with the **SWIPE** switch in the top-right corner:
+
+- **Hover (default, switch off):** a pointer follows the visitor's index fingertip. Pointing at a part (or its label)
+  pulls just that piece out of the shoe; moving off the shoe puts it back and shows the overview.
+- **Swipe (switch on):** no pointer; swipe up for the top (tongue → laces → upper on repeat), down for the sole
+  (midsole → outsole), left for the heel, right for the toe. A swiped-open piece stays for 12 s.
 
 | Visitor does | Kiosk does |
 | --- | --- |
 | Nobody around, or nothing open | The whole shoe slowly rotates back and forth and floats, with an overview of the product |
-| Raises a hand | Hints around the shoe show ↑ TOP, ↓ SOLE, ← HEEL, TOE → |
-| Swipes up | The top opens: tongue, then laces, then upper on each further swipe up |
-| Swipes down | The sole opens: midsole, then outsole |
-| Swipes left / right | The heel / toe cap breaks away |
-| No swipe for 12 s | The piece slides back and the overview returns |
+| Points at / swipes to a part | That piece breaks away from the shoe (attached pieces ride along), glows, and the rest fade back; its info appears bottom-left |
+| Keeps their hand near an edge of the camera view | "Raise your hand a little…" (the camera loses hands near the edges) |
 
-The opened piece breaks away from the shoe (attached pieces ride along), glows, and the rest fade back; its info appears
-bottom-left. Swipe → part mapping lives in `SWIPE_REGIONS` in `lib/product.ts`; swipe sensitivity in `lib/swipe.ts`.
+The mouse and touch always hover / tap. Bottom-right: `SHOW CAMERA VIEW` and `TURN CAMERA OFF`.
+Swipe → part mapping lives in `SWIPE_REGIONS` in `lib/product.ts`.
 
 How swipes are read:
 
@@ -69,7 +71,7 @@ hand drawn on it, which is handy for staff setting up.
 **Camera on/off:** `TURN CAMERA OFF` (or `o`) releases the webcam entirely. Touch and mouse hover/click keep working the
 same way, so it still runs on a touchscreen or with no camera. `TURN CAMERA ON` starts tracking again.
 
-Staff keys: arrow keys act as swipes, `t` teaches the kiosk your swipes, `d` shows tracking FPS, how often the hand is found, the last swipe and why the last near-swipe didn't count (for tuning), `p` shows/hides the hand dot, `c` shows/hides the camera view, `o` turns the camera off/on, `f` toggles fullscreen.
+Staff keys: arrow keys act as swipes, `t` teaches the kiosk your swipes (swipe mode), `d` shows tracking FPS, how often the hand is found, the last swipe and why the last near-swipe didn't count (for tuning), `c` shows/hides the camera view, `o` turns the camera off/on, `f` toggles fullscreen.
 
 ## Code map
 

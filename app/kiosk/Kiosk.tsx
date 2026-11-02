@@ -13,7 +13,8 @@ const ACCENT = "#BFD8FF";
 const STAGE_W = 1280;
 const STAGE_H = 720;
 
-// Interaction tuning. Hands swipe; the mouse hovers (it can't swipe).
+// Interaction tuning. Hands point at parts (hover) by default, or swipe when swipe mode is on;
+// the mouse always hovers (it can't swipe).
 const DETAIL_HOLD_MS = 12000; // a swiped-open part closes after this long without another swipe
 const HOVER_SETTLE_MS = 120; // hover this long before a part pulls out (stops flicker when sweeping across)
 const HOVER_GRACE_MS = 250; // keep hover through brief tracking misses at part edges
@@ -37,7 +38,6 @@ const edgeOf = (x: number, y: number): Edge | null =>
 const TAU_PULL = 0.2;
 const TAU_FOCUS = 0.3;
 
-const ARROWS: Record<SwipeDir, string> = { up: "↑", down: "↓", left: "←", right: "→" };
 const KEY_DIRS: Record<string, SwipeDir> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
 
 type Mode = "attract" | "engaged";
@@ -53,15 +53,14 @@ export default function Kiosk() {
   const [active, setActive] = useState<PartId | null>(null);
   const [mode, setMode] = useState<Mode>("attract");
   const [handVisible, setHandVisible] = useState(false);
-  const [teaching, setTeaching] = useState(false); // 't': record how someone swipes and tune to it
+  const [swipeMode, setSwipeMode] = useState(false); // top-right switch: hands swipe instead of pointing
+  const [teaching, setTeaching] = useState(false); // 't' (swipe mode): record how someone swipes and tune to it
   const [hasSaved, setHasSaved] = useState(false);
   const [cameraOn, setCameraOn] = useState(true);
   const [showSelf, setShowSelf] = useState(false); // hidden self-view; tracking still runs
   const [scale, setScale] = useState(1);
   const [anim, setAnim] = useState<Anim>({ focus: 0, pull: NO_PULL });
-  const [flash, setFlash] = useState<{ dir: SwipeDir; n: number } | null>(null);
   const [debug, setDebug] = useState<string | null>(null); // 'd' shows the last swipe and near-miss, for tuning
-  const [showPointer, setShowPointer] = useState(false); // optional dot + trail following the hand
   const [edge, setEdge] = useState<Edge | null>(null); // the hand keeps sitting near an edge of the camera view
   const [camAspect, setCamAspect] = useState(16 / 9); // the camera's real shape, so the teach view shows the whole frame
 
@@ -71,6 +70,7 @@ export default function Kiosk() {
   const trailRef = useRef<SVGPolylineElement>(null);
   const swipes = useRef<SwipeDetector | null>(null);
   const teachSink = useRef<TeachSink | null>(null); // set while the teach screen is open
+  const swipeModeRef = useRef(false);
   const debugRef = useRef({ on: false, last: "no swipe yet", text: "", since: 0, frames: 0, handFrames: 0, stats: "", taught: false });
 
   // Mutable interaction state that changes every frame and shouldn't re-render.
@@ -127,7 +127,6 @@ export default function Kiosk() {
       s.pinned = true;
       s.swipedAt = performance.now();
       activate(parts[(i + 1) % parts.length]);
-      setFlash((f) => ({ dir, n: (f?.n ?? 0) + 1 }));
     },
     [activate],
   );
@@ -154,16 +153,18 @@ export default function Kiosk() {
       // While teaching, frames go to the teach screen instead of opening parts.
       const teach = teachSink.current;
       if (teach) teach(now, hand ? hand.palmX * hand.aspect : null, hand ? hand.palmY : null);
+      const swiping = swipeModeRef.current;
 
       if (!hand) {
         // A swipe that carried the hand out of view is judged once it's been gone a moment.
-        const swipe = teach ? null : swipes.current?.lost(now);
+        const swipe = teach || !swiping ? null : swipes.current?.lost(now);
         if (swipe) onSwipe(swipe.dir);
         if (s.hasPos) {
           s.hasPos = false;
           s.trail = [];
           trailRef.current?.setAttribute("points", "");
           cursor?.style.setProperty("opacity", "0");
+          if (!swiping) clearHover();
           // The detector rides out a frame or two of lost tracking (fast swipes blur).
           setHandVisible(false);
         }
@@ -174,13 +175,15 @@ export default function Kiosk() {
         swipes.current = new SwipeDetector(loadSwipeOptions()); // taught settings, if any
         dbg.taught = hasSavedSwipeOptions();
       }
-      const swipe = teach ? null : swipes.current.push(now, hand.palmX * hand.aspect, hand.palmY);
+      const swipe = teach || !swiping ? null : swipes.current.push(now, hand.palmX * hand.aspect, hand.palmY);
       if (swipe) onSwipe(swipe.dir);
 
       if (dbg.on) {
         if (swipe) dbg.last = `${swipe.dir.toUpperCase()} (dx ${swipe.dx.toFixed(2)}, dy ${swipe.dy.toFixed(2)})`;
         const miss = swipes.current.miss;
-        const text = `${dbg.taught ? "MY SWIPES · " : ""}${dbg.stats} · LAST: ${dbg.last}${miss ? ` · MISSED: ${miss}` : ""}`;
+        const text = swiping
+          ? `${dbg.taught ? "MY SWIPES · " : ""}${dbg.stats} · LAST: ${dbg.last}${miss ? ` · MISSED: ${miss}` : ""}`
+          : `HOVER · ${dbg.stats}`;
         if (text !== dbg.text) {
           dbg.text = text;
           setDebug(text);
@@ -196,10 +199,10 @@ export default function Kiosk() {
       const warn = now - s.edgeSince >= EDGE_WARN_MS ? s.edge : undefined;
       if (warn !== undefined) setEdge(warn);
 
-      // The optional on-screen dot follows the palm.
+      // The on-screen pointer follows the index fingertip (hover mode only).
       const span = 1 - HAND_MARGIN * 2;
-      const tx = Math.min(Math.max((hand.palmX - HAND_MARGIN) / span, 0), 1) * window.innerWidth;
-      const ty = Math.min(Math.max((hand.palmY - HAND_MARGIN) / span, 0), 1) * window.innerHeight;
+      const tx = Math.min(Math.max((hand.x - HAND_MARGIN) / span, 0), 1) * window.innerWidth;
+      const ty = Math.min(Math.max((hand.y - HAND_MARGIN) / span, 0), 1) * window.innerHeight;
 
       if (!s.hasPos) {
         s.x = tx;
@@ -223,12 +226,26 @@ export default function Kiosk() {
       s.trail.push([s.x, s.y]);
       if (s.trail.length > TRAIL_LEN) s.trail.shift();
       trailRef.current?.setAttribute("points", s.trail.map((p) => p.join(",")).join(" "));
+
+      // Hover mode: whatever part the pointer is over pulls out.
+      if (!swiping && !teach) hoverAt(partAt(s.x, s.y), now);
     },
-    [onSwipe, clearHover],
+    [onSwipe, clearHover, hoverAt],
   );
 
   const status = useHandTracking(videoRef, camCanvasRef, onHand, ACCENT, cameraOn);
   const camOk = status !== "off" && status !== "no-camera" && status !== "error";
+
+  const toggleSwipeMode = useCallback(() => {
+    const on = !swipeModeRef.current;
+    swipeModeRef.current = on;
+    const s = ix.current;
+    s.pinned = false;
+    s.swipedAt = 0;
+    clearHover();
+    if (!on) setTeaching(false);
+    setSwipeMode(on);
+  }, [clearHover]);
 
   const onTeachClose = useCallback((result: TeachResult) => {
     if (result) {
@@ -260,7 +277,7 @@ export default function Kiosk() {
     };
     const key = (e: KeyboardEvent) => {
       if (KEY_DIRS[e.key] && !teachSink.current) onSwipe(KEY_DIRS[e.key]); // arrow keys act like swipes, for testing
-      if (e.key === "t") {
+      if (e.key === "t" && swipeModeRef.current) {
         setHasSaved(hasSavedSwipeOptions());
         setTeaching((v) => !v);
       }
@@ -271,7 +288,6 @@ export default function Kiosk() {
         dbg.text = "";
         setDebug(dbg.on ? `LAST: ${dbg.last}` : null);
       }
-      if (e.key === "p") setShowPointer((v) => !v);
       if (e.key === "c") setShowSelf((v) => !v);
       if (e.key === "o") setCameraOn((v) => !v);
       if (e.key === "f") {
@@ -364,17 +380,23 @@ export default function Kiosk() {
       : "TOUCH TO EXPLORE"
     : !camOk
       ? "HOVER OVER A PART"
-      : handVisible
-        ? "SWIPE TO EXPLORE"
-        : "RAISE A HAND, THEN SWIPE";
+      : !handVisible
+        ? swipeMode
+          ? "RAISE A HAND, THEN SWIPE"
+          : "RAISE A HAND TO EXPLORE"
+        : swipeMode
+          ? "SWIPE TO EXPLORE"
+          : "POINT AT A PART";
   const tip = camOk && handVisible && edge ? EDGE_TIPS[edge] : null;
   const subline = !engaged
     ? "Every part of this shoe has a story. Take a look inside."
     : tip
       ? tip
-      : camOk
-        ? "Up for the top, down for the sole, left for the heel, right for the toe."
-        : "Move over any part, or tap its name.";
+      : !camOk
+        ? "Move over any part, or tap its name."
+        : swipeMode
+          ? "Up for the top, down for the sole, left for the heel, right for the toe."
+          : "Move over any part to pull it out.";
 
   const label = (id: PartId) => {
     const on = id === active;
@@ -461,19 +483,21 @@ export default function Kiosk() {
           </div>
         </div>
 
-        {/* Swipe hints sit on the side of the shoe each swipe opens. */}
-        {camOk &&
-          (Object.keys(SWIPE_REGIONS) as SwipeDir[]).map((dir) => (
-            <div
-              key={flash?.dir === dir ? `${dir}-${flash.n}` : dir}
-              className={styles.swipeHint}
-              data-dir={dir}
-              data-flash={flash?.dir === dir ? "" : undefined}
-              data-on={active && SWIPE_REGIONS[dir].parts.includes(active) ? "" : undefined}
-            >
-              {dir === "right" ? `${SWIPE_REGIONS[dir].label} ${ARROWS[dir]}` : `${ARROWS[dir]} ${SWIPE_REGIONS[dir].label}`}
-            </div>
-          ))}
+        {camOk && (
+          <button
+            type="button"
+            className={styles.modeToggle}
+            role="switch"
+            aria-checked={swipeMode}
+            onClick={toggleSwipeMode}
+            title="Off: point at a part to open it. On: swipe up, down, left or right."
+          >
+            SWIPE
+            <span className={styles.switchTrack}>
+              <span className={styles.switchKnob} />
+            </span>
+          </button>
+        )}
 
         <div className={styles.labelsLeft}>{LEFT_LABELS.map(label)}</div>
         <div className={styles.labelsRight}>{RIGHT_LABELS.map(label)}</div>
@@ -513,7 +537,7 @@ export default function Kiosk() {
             title={STATUS_TEXT[status]}
             style={status === "tracking" ? { background: ACCENT, boxShadow: `0 0 10px ${ACCENT}` } : undefined}
           />
-          {debug ?? (camOk ? "SWIPE ↑ ↓ ← →" : STATUS_TEXT[status])}
+          {debug ?? (camOk ? (swipeMode ? "SWIPE ↑ ↓ ← →" : "POINT / HOVER") : STATUS_TEXT[status])}
           {camOk && (
             <button
               type="button"
@@ -524,14 +548,6 @@ export default function Kiosk() {
               {showSelf ? "HIDE CAMERA VIEW" : "SHOW CAMERA VIEW"}
             </button>
           )}
-          <button
-            type="button"
-            className={styles.camToggle}
-            aria-pressed={showPointer}
-            onClick={() => setShowPointer((v) => !v)}
-          >
-            {showPointer ? "HIDE HAND DOT" : "SHOW HAND DOT"}
-          </button>
           <button
             type="button"
             className={styles.camToggle}
@@ -548,9 +564,9 @@ export default function Kiosk() {
         )}
       </div>
 
-      {/* Optional hand pointer (off by default: the kiosk just responds to swipes).
+      {/* Hand pointer for hover mode (swipe mode just responds to swipes, no pointer).
           It lives outside the scaled stage so it maps 1:1 to the screen. */}
-      {showPointer && (
+      {!swipeMode && camOk && (
         <>
           <svg className={styles.trail} aria-hidden="true">
             <polyline ref={trailRef} fill="none" stroke={ACCENT} strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
