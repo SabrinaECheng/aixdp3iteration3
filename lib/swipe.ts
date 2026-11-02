@@ -48,12 +48,12 @@ export type SwipeOptions = {
 export const DEFAULT_SWIPE: SwipeOptions = {
   smoothMs: 30,
   speedSpanMs: 80,
-  startSpeed: 0.7,
-  endSpeed: 0.35,
+  startSpeed: 0.4,
+  endSpeed: 0.2,
   endHoldMs: 60,
-  maxStrokeMs: 1200,
-  distance: 0.22,
-  distanceVertical: 0.15,
+  maxStrokeMs: 1800,
+  distance: 0.13,
+  distanceVertical: 0.1,
   returnSpeed: 1.5,
   returnSize: 1.3,
   minPeakSpeed: 0.85,
@@ -100,6 +100,7 @@ type Stroke = {
   start: Pt;
   end: Pt;
   reason: string | null; // why it can't be a swipe on its own, or null if it can
+  slowOnly: boolean; // a clear swipe in every way except speed (maybe a slow, deliberate sweep)
 };
 
 export class SwipeDetector {
@@ -112,7 +113,16 @@ export class SwipeDetector {
   private stroke: { start: Pt; end: Pt; far: Pt; peak: number; slowSince: number | null; judged: boolean; fromRest: boolean } | null = null;
   private lastMoveEnd = -Infinity;
   // The last real movement, accepted or not: the hand coming back from it is never a swipe.
-  private last: { dir: SwipeDir; t: number; end: Pt; peak: number; travel: number; returned: boolean } | null = null;
+  private last: {
+    dir: SwipeDir;
+    t: number;
+    start: Pt;
+    end: Pt;
+    peak: number;
+    travel: number;
+    returned: boolean;
+    slowOnly: boolean; // didn't fire for being slow: fire it if the hand now comes back (it was a sweep)
+  } | null = null;
   // The current burst of strokes, decided once the hand has been calm for groupGapMs (sooner for a fast swipe).
   private group: {
     strokes: Stroke[];
@@ -258,7 +268,8 @@ export class SwipeDetector {
                 ? `diagonal (dx ${dx.toFixed(2)}, dy ${dy.toFixed(2)})`
                 : null;
 
-    const stroke: Stroke = { dir, dx, dy, travel, peak: s.peak, start: s.start, end: { ...s.far, t: s.end.t }, reason };
+    const slowOnly = reason !== null && reason.startsWith("too slow") && travel > minor * o.dominance;
+    const stroke: Stroke = { dir, dx, dy, travel, peak: s.peak, start: s.start, end: { ...s.far, t: s.end.t }, reason, slowOnly };
     const g = (this.group ??= { strokes: [], lastEnd: 0, firstValidEnd: null, now: false, lastBefore: this.last });
     g.strokes.push(stroke);
     g.lastEnd = s.end.t;
@@ -301,30 +312,60 @@ export class SwipeDetector {
     };
     // Remember real movements (even ones too small to count), never the hand coming back:
     // that would block the next swipe in the same direction as the last one.
-    const remember = (s: Stroke) => {
+    const remember = (s: Stroke, returned = false) => {
       if (s.travel >= Math.min(o.distance, o.distanceVertical) * 0.5 && !isReturn(s)) {
-        this.last = { dir: s.dir, t: s.end.t, end: s.end, peak: s.peak, travel: s.travel, returned: false };
+        this.last = { dir: s.dir, t: s.end.t, start: s.start, end: s.end, peak: s.peak, travel: s.travel, returned, slowOnly: s.slowOnly };
       }
     };
+    const fire = (s: { dir: SwipeDir; dx: number; dy: number; peak: number; start: Pt; end: Pt }) => {
+      this.lockUntil = t + o.cooldownMs;
+      this.miss = null;
+      return { dir: s.dir, dx: s.dx, dy: s.dy, peak: s.peak, ms: s.end.t - s.start.t, at: s.end.t };
+    };
     const cameBack = g.strokes.some(isReturn);
+
+    // A swipe has at most a wind-up before it and a return after it; more back-and-forth is waving.
+    let reversals = 0;
+    for (let i = 1; i < this.recent.length; i++) if (this.recent[i].dir === OPPOSITE[this.recent[i - 1].dir]) reversals++;
+    if (reversals >= o.waveReversals) return this.reject(`waving (${reversals} back-and-forths)`);
+    if (this.recent.length >= o.fidgetMoves) return this.reject(`fidgeting (${this.recent.length} moves)`);
+
+    // A slow sweep that the hand then brings back to where it started was deliberate: fire the sweep
+    // (never the return). A wind-up is different: the swipe after it carries on past where it started.
+    const backTo = (b: Stroke, a: { start: Pt; travel: number }) =>
+      Math.hypot(b.end.rx - a.start.rx, b.end.ry - a.start.ry) < a.travel * 0.3;
+    const firstValid = g.strokes.findIndex((s) => !s.reason);
+    const sweep = g.strokes.find(
+      (a, i) =>
+        a.slowOnly &&
+        (firstValid < 0 || firstValid > i) &&
+        !isReturn(a) &&
+        g.strokes.slice(i + 1).some((b) => b.dir === OPPOSITE[a.dir] && backTo(b, a)),
+    );
+    if (sweep) {
+      remember(sweep, true);
+      return fire(sweep);
+    }
+    if (last?.slowOnly && !last.returned && g.strokes.some((b) => b.dir === OPPOSITE[last.dir] && backTo(b, last))) {
+      // ...and the same when the hand comes back a little later.
+      last.returned = true;
+      last.slowOnly = false;
+      const dx = last.end.rx - last.start.rx;
+      const dy = last.end.ry - last.start.ry;
+      return fire({ dir: last.dir, dx, dy, peak: last.peak, start: last.start, end: last.end });
+    }
 
     if (!best) {
       remember(top);
       if (cameBack && this.last === last && last) last.returned = true;
       return this.reject(top.reason!);
     }
-    // A swipe has at most a wind-up before it and a return after it; more back-and-forth is waving.
-    let reversals = 0;
-    for (let i = 1; i < this.recent.length; i++) if (this.recent[i].dir === OPPOSITE[this.recent[i - 1].dir]) reversals++;
-    if (reversals >= o.waveReversals) return this.reject(`waving (${reversals} back-and-forths)`);
-    if (this.recent.length >= o.fidgetMoves) return this.reject(`fidgeting (${this.recent.length} moves)`);
     if (isReturn(best)) {
       last!.returned = true;
       return this.reject(`${best.dir} ignored: hand coming back from ${last!.dir}`);
     }
-    remember(best);
     // A quick return in the same burst means the hand has already come back.
-    if (this.last && g.strokes.some((s) => s.start.t >= best.end.t && s.dir === OPPOSITE[best.dir])) this.last.returned = true;
+    remember(best, g.strokes.some((s) => s.start.t >= best.end.t && s.dir === OPPOSITE[best.dir]));
     this.lockUntil = best.end.t + o.cooldownMs;
     this.miss = null;
     return { dir: best.dir, dx: best.dx, dy: best.dy, peak: best.peak, ms: best.end.t - best.start.t, at: best.end.t };

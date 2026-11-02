@@ -27,8 +27,11 @@ How swipes are read:
 - Each movement is judged as one whole stroke, from when the hand speeds up to when it slows down, so fast flicks,
   slower deliberate swipes and curved swipes all work. A movement is split wherever the hand reverses direction, and
   measured to its furthest point, so a quick flick that springs back still counts in full.
-- Up / down swipes need less travel than left / right ones (people swipe shorter vertically): 0.15 vs 0.22 of the
-  camera frame's height.
+- Many ways of swiping work: quick flicks, normal swipes, slow sweeps, angled and arcing swipes, small swipes. Up /
+  down swipes need less travel than left / right ones (people swipe shorter vertically): 0.10 vs 0.13 of the camera
+  frame's height.
+- A slow sweep counts once the hand comes back to where it started (that's what makes it deliberate rather than the
+  hand drifting); the hand coming back never fires on its own.
 - A fast swipe that starts from a resting hand fires the moment it's clearly done (as the hand slows down), with no
   waiting. Other movements that follow each other closely (a wind-up the other way, the swipe, a quick return) are
   judged together as one burst, ~0.3 s after the hand calms down and never more than ~0.4 s after the first move. The

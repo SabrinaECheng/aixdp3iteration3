@@ -131,7 +131,8 @@ export function deriveOptions(recs: Recording[]): SwipeOptions {
   if (st.length < 4) return DEFAULT_SWIPE;
   // Loosen thresholds for gentler swipers; never demand more speed than the defaults do.
   const minPeakSpeed = clamp(0.6 * low(st.map((s) => s.peak)), 0.5, DEFAULT_SWIPE.minPeakSpeed);
-  const startSpeed = clamp(0.75 * minPeakSpeed, 0.35, 0.7);
+  // Never notice movements later than the defaults do (slow sweeps need to be seen from their start).
+  const startSpeed = clamp(0.75 * minPeakSpeed, 0.3, DEFAULT_SWIPE.startSpeed);
   return {
     ...DEFAULT_SWIPE,
     distance: axisDistance(st.filter((s) => s.dir === "left" || s.dir === "right"), DEFAULT_SWIPE.distance),
