@@ -29,10 +29,16 @@ export type SwipeOptions = {
   returnMs: number; // the opposite direction this soon after a swipe is the hand coming back
   returnNearMs: number; // ...and up to this long if it starts where the last swipe ended
   returnNear: number; // how close (frame heights) counts as "where the last swipe ended"
-  groupGapMs: number; // strokes closer together than this are one burst; decide once it's over
+  groupGapMs: number; // strokes closer together than this are one burst; decide once it's over...
+  maxWaitMs: number; // ...but never wait longer than this after the first real move, even if the hand keeps moving
+  fastSpeed: number; // a valid move at least this fast (frame heights / s), starting from a resting hand,
+  // is decided as soon as it's clearly done (waving never starts from rest, so it still waits)
+  restMs: number; // no movement for this long before a stroke counts as starting from rest
   minMove: number; // strokes shorter than this (frame heights) are just jitter
   overtake: number; // a later move in a burst only wins if it's this many times bigger (speed × distance)
-  maxBurst: number; // a burst with more moves than this is waving or fidgeting, not a swipe
+  waveWindowMs: number; // within this long, this many direction reversals (waving)...
+  waveReversals: number;
+  fidgetMoves: number; // ...or this many moves of any kind (circling, fidgeting) isn't a swipe
   maxGapMs: number; // tracking lost longer than this ends the stroke / starts fresh
   absentMs: number; // gone at least this long counts as the hand (re)appearing...
   warmupMs: number; // ...and strokes starting this soon after are ignored (raising it into view)
@@ -57,9 +63,14 @@ export const DEFAULT_SWIPE: SwipeOptions = {
   returnNearMs: 3000,
   returnNear: 0.15,
   groupGapMs: 300,
+  maxWaitMs: 400,
+  fastSpeed: 1.4,
+  restMs: 250,
   minMove: 0.1,
   overtake: 2,
-  maxBurst: 3,
+  waveWindowMs: 1500,
+  waveReversals: 3,
+  fidgetMoves: 4,
   maxGapMs: 250,
   absentMs: 500,
   warmupMs: 300,
@@ -97,11 +108,21 @@ export class SwipeDetector {
   private acquiredAt = -Infinity;
   private lockUntil = 0;
   // far = the point furthest from the start, so a flick that springs back still counts in full.
-  private stroke: { start: Pt; end: Pt; far: Pt; peak: number; slowSince: number | null } | null = null;
+  // judged = already decided early (a fast swipe); the rest of the movement plays out without counting again.
+  private stroke: { start: Pt; end: Pt; far: Pt; peak: number; slowSince: number | null; judged: boolean; fromRest: boolean } | null = null;
+  private lastMoveEnd = -Infinity;
   // The last real movement, accepted or not: the hand coming back from it is never a swipe.
   private last: { dir: SwipeDir; t: number; end: Pt; peak: number; travel: number; returned: boolean } | null = null;
-  // The current burst of strokes, decided once the hand has been calm for groupGapMs.
-  private group: { strokes: Stroke[]; lastEnd: number; lastBefore: SwipeDetector["last"] } | null = null;
+  // The current burst of strokes, decided once the hand has been calm for groupGapMs (sooner for a fast swipe).
+  private group: {
+    strokes: Stroke[];
+    lastEnd: number;
+    firstValidEnd: number | null;
+    now: boolean; // a fast, clear swipe: decide straight away
+    lastBefore: SwipeDetector["last"];
+  } | null = null;
+  // Recent moves of any kind, to spot back-and-forth waving.
+  private recent: { dir: SwipeDir; t: number }[] = [];
   /** Why the most recent stroke didn't count (for on-screen tuning). */
   miss: string | null = null;
 
@@ -131,7 +152,8 @@ export class SwipeDetector {
         // Walk back to where the hand actually started moving.
         let i = this.hist.length - 1;
         while (i > 0 && this.stepSpeed(i) > o.endSpeed) i--;
-        this.stroke = { start: this.hist[i], end: p, far: p, peak: speed, slowSince: null };
+        const start = this.hist[i];
+        this.stroke = { start, end: p, far: p, peak: speed, slowSince: null, judged: false, fromRest: start.t - this.lastMoveEnd > o.restMs };
       }
       return this.decide(t);
     }
@@ -146,7 +168,7 @@ export class SwipeDetector {
     if (speed > o.startSpeed && Math.hypot(sx, sy) > o.minMove && along < -0.5 * speed * Math.hypot(sx, sy)) {
       const turn = s.end;
       this.finish();
-      this.stroke = { start: turn, end: p, far: p, peak: speed, slowSince: null };
+      this.stroke = { start: turn, end: p, far: p, peak: speed, slowSince: null, judged: false, fromRest: false };
       return this.decide(t);
     }
     s.end = p;
@@ -155,6 +177,13 @@ export class SwipeDetector {
     s.peak = Math.max(s.peak, speed);
     if (speed < o.endSpeed) s.slowSince ??= t;
     else s.slowSince = null;
+    // A fast swipe that has gone far enough is over once the hand is clearly slowing down:
+    // don't wait for it to come to a full stop before reacting.
+    const far = Math.max(Math.abs(s.far.rx - s.start.rx), Math.abs(s.far.ry - s.start.ry));
+    if (!s.judged && s.fromRest && s.peak >= o.fastSpeed && speed < s.peak * 0.5 && far >= Math.min(o.distance, o.distanceVertical)) {
+      this.judge(s, false);
+      s.judged = true;
+    }
     if ((s.slowSince !== null && t - s.slowSince >= o.endHoldMs) || t - s.start.t > o.maxStrokeMs) this.finish();
     return this.decide(t);
   }
@@ -186,11 +215,17 @@ export class SwipeDetector {
     return Math.hypot(p.x - q.x, p.y - q.y) / Math.max((p.t - q.t) / 1000, 1e-3);
   }
 
-  /** Close the current stroke and add it to the burst. */
+  /** Close the current stroke and add it to the burst (unless it was already judged early). */
   private finish(lostHand = false) {
     const s = this.stroke;
     this.stroke = null;
     if (!s) return;
+    this.lastMoveEnd = s.end.t;
+    if (!s.judged) this.judge(s, lostHand);
+  }
+
+  /** Add a stroke (finished, or a fast swipe still slowing down) to the burst. */
+  private judge(s: NonNullable<SwipeDetector["stroke"]>, lostHand: boolean) {
     const o = this.o;
     // Measure to the furthest point: a quick flick often springs back a little before the hand stops.
     const dx = s.far.rx - s.start.rx;
@@ -224,15 +259,25 @@ export class SwipeDetector {
                 : null;
 
     const stroke: Stroke = { dir, dx, dy, travel, peak: s.peak, start: s.start, end: { ...s.far, t: s.end.t }, reason };
-    this.group ??= { strokes: [], lastEnd: 0, lastBefore: this.last };
-    this.group.strokes.push(stroke);
-    this.group.lastEnd = s.end.t;
+    const g = (this.group ??= { strokes: [], lastEnd: 0, firstValidEnd: null, now: false, lastBefore: this.last });
+    g.strokes.push(stroke);
+    g.lastEnd = s.end.t;
+    if (!reason) {
+      g.firstValidEnd ??= s.end.t;
+      if (s.peak >= o.fastSpeed && s.fromRest) g.now = true;
+    }
+    this.recent.push({ dir, t: s.end.t });
+    while (this.recent.length && s.end.t - this.recent[0].t > o.waveWindowMs) this.recent.shift();
   }
 
   /** Once a burst is over, fire its main stroke (if it isn't the hand coming back). */
   private decide(t: number): Swipe | null {
     const g = this.group;
-    if (!g || this.stroke || t - g.lastEnd < this.o.groupGapMs) return null;
+    if (!g) return null;
+    const settled = !this.stroke && t - g.lastEnd >= this.o.groupGapMs;
+    // ...but don't cut off a movement that's still happening (it may be the real swipe after a wind-up).
+    const waitedEnough = !this.stroke && g.firstValidEnd !== null && t - g.firstValidEnd >= this.o.maxWaitMs;
+    if (!g.now && !settled && !waitedEnough) return null;
     this.group = null;
     const o = this.o;
     // The first move wins unless a later one is clearly bigger: a wind-up is smaller than the swipe
@@ -268,8 +313,11 @@ export class SwipeDetector {
       if (cameBack && this.last === last && last) last.returned = true;
       return this.reject(top.reason!);
     }
-    // A swipe burst is at most wind-up, swipe, quick return; more back-and-forth is waving.
-    if (g.strokes.length > o.maxBurst) return this.reject(`waving or fidgeting (${g.strokes.length} moves)`);
+    // A swipe has at most a wind-up before it and a return after it; more back-and-forth is waving.
+    let reversals = 0;
+    for (let i = 1; i < this.recent.length; i++) if (this.recent[i].dir === OPPOSITE[this.recent[i - 1].dir]) reversals++;
+    if (reversals >= o.waveReversals) return this.reject(`waving (${reversals} back-and-forths)`);
+    if (this.recent.length >= o.fidgetMoves) return this.reject(`fidgeting (${this.recent.length} moves)`);
     if (isReturn(best)) {
       last!.returned = true;
       return this.reject(`${best.dir} ignored: hand coming back from ${last!.dir}`);

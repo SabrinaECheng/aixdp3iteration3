@@ -29,9 +29,11 @@ How swipes are read:
   measured to its furthest point, so a quick flick that springs back still counts in full.
 - Up / down swipes need less travel than left / right ones (people swipe shorter vertically): 0.15 vs 0.22 of the
   camera frame's height.
-- Movements that follow each other closely (a wind-up the other way, the swipe, a quick return) are judged together as
-  one burst, ~0.3 s after the hand calms down. The first move wins unless a later one is clearly bigger, so a wind-up
-  never fires instead of the swipe after it. Four or more back-and-forth moves is waving, not a swipe.
+- A fast swipe that starts from a resting hand fires the moment it's clearly done (as the hand slows down), with no
+  waiting. Other movements that follow each other closely (a wind-up the other way, the swipe, a quick return) are
+  judged together as one burst, ~0.3 s after the hand calms down and never more than ~0.4 s after the first move. The
+  first move wins unless a later one is clearly bigger, so a wind-up never fires instead of the swipe after it.
+- Three back-and-forths, or four moves of any kind, within 1.5 s is waving or fidgeting, not a swipe.
 - Bringing the hand back after a swipe is ignored (even a couple of seconds later) unless it's much faster *and*
   longer than the movement before it (then it's a real swipe, e.g. after a small wind-up), as are raising a hand into view,
   lowering an arm out of view, slow movement, small jiggles and clearly diagonal moves.
