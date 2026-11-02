@@ -59,9 +59,6 @@ The `d` readout shows `MY SWIPES` when taught settings are active. Logic lives i
 
 **Mouse and touch** can't swipe, so they still hover / tap parts or their labels directly.
 
-**Hand dot:** off by default, so the kiosk just responds to swipes. `SHOW HAND DOT` (or `p`) shows a dot and trail
-following the palm. The mouse cursor always shows normally.
-
 Prefer the previous point-and-hover hand interaction? It's preserved on the `hover-version` branch.
 
 **Camera view:** the camera always tracks hands, but the video of the visitor is hidden by default so nobody has to
