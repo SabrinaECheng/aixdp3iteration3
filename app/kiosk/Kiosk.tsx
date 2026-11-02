@@ -63,6 +63,7 @@ export default function Kiosk() {
   const [debug, setDebug] = useState<string | null>(null); // 'd' shows the last swipe and near-miss, for tuning
   const [showPointer, setShowPointer] = useState(false); // optional dot + trail following the hand
   const [edge, setEdge] = useState<Edge | null>(null); // the hand keeps sitting near an edge of the camera view
+  const [camAspect, setCamAspect] = useState(16 / 9); // the camera's real shape, so the teach view shows the whole frame
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const camCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -483,9 +484,26 @@ export default function Kiosk() {
           <span className={styles.infoSpecs}>{info.specs}</span>
         </div>
 
-        <div className={styles.cam} style={{ opacity: camOk && showSelf ? 1 : 0 }}>
-          <video ref={videoRef} className={styles.camVideo} muted playsInline />
+        {/* Small self-view in the corner; while teaching, a large one beside the prompts so you can
+            see your hand stay inside the area the camera tracks reliably. */}
+        <div
+          className={teaching && camOk ? `${styles.cam} ${styles.camTeach}` : styles.cam}
+          style={{ opacity: camOk && (showSelf || teaching) ? 1 : 0, ...(teaching ? { height: 456 / camAspect } : null) }}
+        >
+          <video
+            ref={videoRef}
+            className={styles.camVideo}
+            muted
+            playsInline
+            onLoadedMetadata={(e) => setCamAspect(e.currentTarget.videoWidth / Math.max(e.currentTarget.videoHeight, 1))}
+          />
           <canvas ref={camCanvasRef} width={320} height={180} className={styles.camVideo} />
+          {teaching && (
+            <>
+              <div className={styles.camGuide} />
+              <div className={styles.camGuideLabel}>KEEP YOUR HAND INSIDE THE BOX</div>
+            </>
+          )}
         </div>
 
         <div className={styles.hint}>

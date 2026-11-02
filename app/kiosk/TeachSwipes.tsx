@@ -93,7 +93,7 @@ export default function TeachSwipes({
   if (review) {
     const pct = (s: { ok: number; n: number }) => `${s.ok}/${s.n}`;
     return (
-      <div className={styles.teach}>
+      <div className={styles.teach} data-review="">
         <div className={styles.teachTitle}>YOUR SWIPES</div>
         <div className={styles.teachSub}>Replaying your {recs.length} swipes (and your hand coming back after each one):</div>
         <table className={styles.teachTable}>
@@ -165,7 +165,8 @@ export default function TeachSwipes({
   const dir = TEACH_PLAN[step];
   const n = (step % TEACH_REPEATS) + 1;
   return (
-    <div className={styles.teach}>
+    // The kiosk shows the live camera beside this while recording (see .camTeach).
+    <div className={styles.teach} data-recording="">
       <div className={styles.teachEyebrow}>TEACH SWIPES · {step + 1} OF {TEACH_PLAN.length}</div>
       <div key={step} className={styles.teachArrow} data-got={got ? "" : undefined}>
         {ARROWS[dir]}

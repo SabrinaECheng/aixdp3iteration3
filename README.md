@@ -38,7 +38,8 @@ less than 80% of the time. Tracking confidence is set below MediaPipe's defaults
 on to rather than dropped.
 
 **Teach swipes (`t`):** walks you through swiping up, down, left and right 5 times each and records exactly how your
-hand moves, including how you bring it back. The review screen replays the recording with the default settings and with
+hand moves, including how you bring it back. A large live camera view sits beside the prompts with your tracked hand drawn on it and a
+dashed box showing where the camera tracks a hand reliably, so you can keep your hand inside it. The review screen replays the recording with the default settings and with
 settings derived from your swipes, so you can see which recognises you better:
 
 - `USE MY SWIPES` keeps the derived settings on this machine (browser storage); `BACK TO DEFAULT` undoes it.
