@@ -1,30 +1,34 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { buildHitLayers, buildShoe, NO_PULL } from "@/lib/shoe";
-import { LEFT_LABELS, PARTS, PART_ORDER, PRODUCT, RIGHT_LABELS, SWIPE_REGIONS, type PartId } from "@/lib/product";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { TOPICS, type PartId } from "@/lib/product";
+import { newSession, saveLead, type LeadMethod, type Session } from "@/lib/session";
 import { DEFAULT_SWIPE, SwipeDetector, type SwipeDir } from "@/lib/swipe";
 import { hasSavedSwipeOptions, loadSwipeOptions, saveSwipeOptions } from "@/lib/swipeTeach";
 import { useHandTracking, type HandFrame } from "@/lib/useHandTracking";
 import styles from "./kiosk.module.css";
+import { Hub, Lead, Staff } from "./Screens";
 import TeachSwipes, { type TeachResult, type TeachSink } from "./TeachSwipes";
 
 const ACCENT = "#BFD8FF";
 const STAGE_W = 1280;
 const STAGE_H = 720;
 
-// Interaction tuning. Hands point at parts (hover) by default, or swipe when swipe mode is on;
-// the mouse always hovers (it can't swipe).
-const DETAIL_HOLD_MS = 12000; // a swiped-open part closes after this long without another swipe
-const HOVER_SETTLE_MS = 120; // hover this long before a part pulls out (stops flicker when sweeping across)
-const HOVER_GRACE_MS = 250; // keep hover through brief tracking misses at part edges
-const UNHOVER_MS = 400; // off the shoe this long → parts settle back and the shoe overview shows
-const IDLE_MS = 9000; // no one around → attract mode
+type Screen = "hub" | "staff" | "lead";
+const DEFAULT_TOPIC = 1; // "How it works": the exploded earbud is the strongest first impression
+
+// Timing.
+const PRESENT_MS = 8000; // no hand and no touch/mouse for this long → nobody is at the kiosk
+const ATTRACT_CYCLE_MS = 5000; // nobody here: flip through the topics like a pamphlet on a stand
+const RESET_MS = 45000; // nobody here this long → clear the visitor's session, back to the start
+const RESET_STAFF_MS = 180000; // they were told to look around while staff come over, so wait longer
+const HAND_GRACE_MS = 250; // keep a dwell going through brief tracking misses
 const HAND_MARGIN = 0.12; // ignore the outer edge of the camera frame
 const SMOOTHING = 0.45;
 const TRAIL_LEN = 10;
-// The camera loses a hand that sits near the edge of its view (most often the bottom, where swipes
-// arc out of frame). Held there this long → ask the visitor to move it toward the middle.
+const TAU_EXPLODE = 0.35; // easing time constant (s) for the earbud coming apart
+
+// The camera loses a hand near the edge of its view. Held there this long → ask the visitor to move it.
 const EDGE_WARN_MS = 700;
 const EDGE_TIPS = {
   low: "Raise your hand a little: the camera loses it near the bottom.",
@@ -34,24 +38,17 @@ const EDGE_TIPS = {
 type Edge = keyof typeof EDGE_TIPS;
 const edgeOf = (x: number, y: number): Edge | null =>
   y > 0.78 ? "low" : y < 0.12 ? "high" : x < 0.1 || x > 0.9 ? "side" : null;
-// Easing time constants (seconds): smaller = snappier.
-const TAU_PULL = 0.2;
-const TAU_FOCUS = 0.3;
 
 const KEY_DIRS: Record<string, SwipeDir> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
 
-type Mode = "attract" | "engaged";
-type Anim = { focus: number; pull: Record<PartId, number> };
-
-const partAt = (x: number, y: number): PartId | null => {
-  const el = document.elementFromPoint(x, y);
-  const part = el?.closest("[data-part]")?.getAttribute("data-part");
-  return (part as PartId) ?? null;
-};
-
 export default function Kiosk() {
-  const [active, setActive] = useState<PartId | null>(null);
-  const [mode, setMode] = useState<Mode>("attract");
+  const [screen, setScreen] = useState<Screen>("hub");
+  const [topic, setTopic] = useState(DEFAULT_TOPIC);
+  const [present, setPresent] = useState(false); // someone is using the kiosk (else attract loop)
+  const [hoverPart, setHoverPart] = useState<PartId | null>(null); // a "how it works" row under the pointer
+  const [explode, setExplode] = useState(TOPICS[DEFAULT_TOPIC].explode);
+  // The session lives in a ref (time per topic grows every frame); screens get a snapshot of it.
+  const [view, setView] = useState<Session>(newSession);
   const [handVisible, setHandVisible] = useState(false);
   const [swipeMode, setSwipeMode] = useState(false); // top-right switch: hands swipe instead of pointing
   const [teaching, setTeaching] = useState(false); // 't' (swipe mode): record how someone swipes and tune to it
@@ -59,77 +56,161 @@ export default function Kiosk() {
   const [cameraOn, setCameraOn] = useState(true);
   const [showSelf, setShowSelf] = useState(false); // hidden self-view; tracking still runs
   const [scale, setScale] = useState(1);
-  const [anim, setAnim] = useState<Anim>({ focus: 0, pull: NO_PULL });
-  const [debug, setDebug] = useState<string | null>(null); // 'd' shows the last swipe and near-miss, for tuning
-  const [edge, setEdge] = useState<Edge | null>(null); // the hand keeps sitting near an edge of the camera view
-  const [camAspect, setCamAspect] = useState(16 / 9); // the camera's real shape, so the teach view shows the whole frame
+  const [debug, setDebug] = useState<string | null>(null); // 'd': tracking rate and last swipe
+  const [edge, setEdge] = useState<Edge | null>(null);
+  const [camAspect, setCamAspect] = useState(16 / 9);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const camCanvasRef = useRef<HTMLCanvasElement>(null);
   const cursorRef = useRef<HTMLDivElement>(null);
   const trailRef = useRef<SVGPolylineElement>(null);
   const swipes = useRef<SwipeDetector | null>(null);
-  const teachSink = useRef<TeachSink | null>(null); // set while the teach screen is open
+  const teachSink = useRef<TeachSink | null>(null);
   const swipeModeRef = useRef(false);
-  const debugRef = useRef({ on: false, last: "no swipe yet", text: "", since: 0, frames: 0, handFrames: 0, stats: "", taught: false });
+  const debugRef = useRef({ on: false, last: "no swipe yet", text: "", since: 0, frames: 0, handFrames: 0, stats: "" });
+  const session = useRef<Session>(newSession());
 
-  // Mutable interaction state that changes every frame and shouldn't re-render.
+  // Mutable per-frame state that shouldn't re-render.
   const ix = useRef({
+    screen: "hub" as Screen,
+    topic: DEFAULT_TOPIC,
+    present: false,
+    lastActive: 0, // last time a hand, touch or mouse was seen
+    lastCycle: 0,
+    hasPos: false,
     x: 0,
     y: 0,
-    hasPos: false,
-    hoverPart: null as PartId | null,
-    hoverSince: 0,
-    lastHit: 0,
-    lastActive: 0,
     trail: [] as [number, number][],
-    active: null as PartId | null,
-    pinned: false, // swiped / tapped / keyed parts stay open (no hover to keep them there)
-    swipedAt: 0,
+    dwellEl: null as HTMLElement | null,
+    dwellSince: 0,
+    dwellHit: 0,
+    dwellFired: false,
+    hoverPart: null as PartId | null,
     edge: null as Edge | null,
     edgeSince: 0,
-    mode: "attract" as Mode,
   });
 
-  const activate = useCallback((part: PartId | null) => {
-    const s = ix.current;
-    s.lastActive = performance.now();
-    s.active = part;
-    s.mode = "engaged";
-    setMode("engaged");
-    setActive(part);
-  }, []);
+  const bump = useCallback(() => setView({ ...session.current, time: { ...session.current.time }, picked: [...session.current.picked] }), []);
 
-  const hoverAt = useCallback((part: PartId | null, now: number) => {
+  // ---- Session -------------------------------------------------------------
+  const markPresent = useCallback((now: number) => {
     const s = ix.current;
-    if (part) s.lastHit = now;
-    else if (now - s.lastHit < HOVER_GRACE_MS) part = s.hoverPart;
-    if (part !== s.hoverPart) {
-      s.hoverPart = part;
-      s.hoverSince = now;
+    s.lastActive = now;
+    if (!s.present) {
+      s.present = true;
+      setPresent(true);
+      if (!session.current.start) session.current.start = Date.now();
     }
-    cursorRef.current?.toggleAttribute("data-over", !!part);
   }, []);
 
-  const clearHover = useCallback(() => {
-    const s = ix.current;
-    s.hoverPart = null;
-    s.lastHit = 0;
-    s.hoverSince = performance.now();
-  }, []);
+  const pickTopic = useCallback(
+    (i: number, byVisitor = true) => {
+      const n = TOPICS.length;
+      i = ((i % n) + n) % n;
+      ix.current.topic = i;
+      setTopic(i);
+      setHoverPart(null);
+      ix.current.hoverPart = null;
+      if (byVisitor) {
+        const picked = session.current.picked;
+        if (!picked.includes(TOPICS[i].id)) picked.push(TOPICS[i].id);
+        bump();
+      }
+    },
+    [bump],
+  );
 
-  // ---- Swipes: each direction opens the next piece in that region of the shoe --
+  const go = useCallback(
+    (to: Screen) => {
+      ix.current.screen = to;
+      if (to === "staff" && !session.current.staffAsked) session.current.staffAsked = Date.now();
+      clearDwell(ix.current);
+      setHoverPart(null);
+      setScreen(to);
+      bump();
+    },
+    [bump],
+  );
+
+  const resetVisitor = useCallback(() => {
+    session.current = newSession();
+    ix.current.screen = "hub";
+    setScreen("hub");
+    pickTopic(DEFAULT_TOPIC, false);
+    bump();
+  }, [pickTopic, bump]);
+
+  const updateSession = useCallback(
+    (patch: Partial<Session>) => {
+      Object.assign(session.current, patch);
+      bump();
+    },
+    [bump],
+  );
+
+  const onSent = useCallback(
+    (method: LeadMethod) => {
+      session.current.sent = method;
+      saveLead(session.current, method);
+      bump();
+    },
+    [bump],
+  );
+
+  // ---- Swipes: flip through topics like pages; on other screens, swipe right to go back ----
   const onSwipe = useCallback(
     (dir: SwipeDir) => {
-      const s = ix.current;
-      const parts = SWIPE_REGIONS[dir].parts;
-      const i = s.active ? parts.indexOf(s.active) : -1;
-      s.pinned = true;
-      s.swipedAt = performance.now();
-      activate(parts[(i + 1) % parts.length]);
+      markPresent(performance.now());
+      if (ix.current.screen !== "hub") {
+        if (dir === "right") go("hub");
+        return;
+      }
+      pickTopic(ix.current.topic + (dir === "left" || dir === "down" ? 1 : -1));
     },
-    [activate],
+    [go, pickTopic, markPresent],
   );
+
+  // ---- Pointing: whatever the hand (or mouse) is over ------------------------
+  // Hands press things by holding still over them (dwell); the mouse only dwells on topics and clicks the rest.
+  const pointAt = useCallback((x: number, y: number, source: "hand" | "mouse", now: number) => {
+    const s = ix.current;
+    const hit = document.elementFromPoint(x, y);
+    let target = (hit?.closest("[data-dwell]") as HTMLElement | null) ?? null;
+    if (target && (target.hasAttribute("data-current") || (source === "mouse" && !target.hasAttribute("data-dwell-mouse")))) target = null;
+    if (target) s.dwellHit = now;
+    else if (source === "hand" && s.dwellEl && now - s.dwellHit < HAND_GRACE_MS) target = s.dwellEl;
+    if (target !== s.dwellEl) {
+      clearDwell(s);
+      if (target) {
+        s.dwellEl = target;
+        s.dwellSince = now;
+        const ms = Number(target.dataset.dwell) || 1000;
+        target.style.setProperty("--dwell", `${ms}ms`);
+        target.setAttribute("data-dwelling", "");
+        cursorRef.current?.style.setProperty("--dwell", `${ms}ms`);
+      }
+    }
+    const cursor = cursorRef.current;
+    cursor?.toggleAttribute("data-over", !!target);
+    cursor?.toggleAttribute("data-dwelling", !!target && !s.dwellFired);
+
+    const part = (hit?.closest("[data-part]")?.getAttribute("data-part") as PartId | null) ?? null;
+    if (part !== s.hoverPart) {
+      s.hoverPart = part;
+      setHoverPart(part);
+    }
+  }, []);
+
+  const pointerGone = useCallback(() => {
+    const s = ix.current;
+    clearDwell(s);
+    cursorRef.current?.removeAttribute("data-over");
+    cursorRef.current?.removeAttribute("data-dwelling");
+    if (s.hoverPart) {
+      s.hoverPart = null;
+      setHoverPart(null);
+    }
+  }, []);
 
   // ---- Hand input -------------------------------------------------------
   const onHand = useCallback(
@@ -138,7 +219,6 @@ export default function Kiosk() {
       const now = performance.now();
       const cursor = cursorRef.current;
 
-      // 'd' readout: tracking rate and how often the hand is actually found help explain misses.
       const dbg = debugRef.current;
       if (dbg.on) {
         dbg.frames++;
@@ -150,13 +230,12 @@ export default function Kiosk() {
         }
       }
 
-      // While teaching, frames go to the teach screen instead of opening parts.
+      // While teaching, frames go to the teach screen instead.
       const teach = teachSink.current;
       if (teach) teach(now, hand ? hand.palmX * hand.aspect : null, hand ? hand.palmY : null);
       const swiping = swipeModeRef.current;
 
       if (!hand) {
-        // A swipe that carried the hand out of view is judged once it's been gone a moment.
         const swipe = teach || !swiping ? null : swipes.current?.lost(now);
         if (swipe) onSwipe(swipe.dir);
         if (s.hasPos) {
@@ -164,61 +243,49 @@ export default function Kiosk() {
           s.trail = [];
           trailRef.current?.setAttribute("points", "");
           cursor?.style.setProperty("opacity", "0");
-          if (!swiping) clearHover();
-          // The detector rides out a frame or two of lost tracking (fast swipes blur).
+          pointerGone();
           setHandVisible(false);
         }
         return;
       }
 
-      if (!swipes.current) {
-        swipes.current = new SwipeDetector(loadSwipeOptions()); // taught settings, if any
-        dbg.taught = hasSavedSwipeOptions();
-      }
+      if (!swipes.current) swipes.current = new SwipeDetector(loadSwipeOptions());
       const swipe = teach || !swiping ? null : swipes.current.push(now, hand.palmX * hand.aspect, hand.palmY);
       if (swipe) onSwipe(swipe.dir);
 
       if (dbg.on) {
         if (swipe) dbg.last = `${swipe.dir.toUpperCase()} (dx ${swipe.dx.toFixed(2)}, dy ${swipe.dy.toFixed(2)})`;
         const miss = swipes.current.miss;
-        const text = swiping
-          ? `${dbg.taught ? "MY SWIPES · " : ""}${dbg.stats} · LAST: ${dbg.last}${miss ? ` · MISSED: ${miss}` : ""}`
-          : `HOVER · ${dbg.stats}`;
+        const text = swiping ? `${dbg.stats} · LAST: ${dbg.last}${miss ? ` · MISSED: ${miss}` : ""}` : `POINT · ${dbg.stats}`;
         if (text !== dbg.text) {
           dbg.text = text;
           setDebug(text);
         }
       }
 
-      // Hand kept near an edge of the camera view → tip to move it toward the middle.
       const e = edgeOf(hand.palmX, hand.palmY);
       if (e !== s.edge) {
         s.edge = e;
         s.edgeSince = now;
       }
-      const warn = now - s.edgeSince >= EDGE_WARN_MS ? s.edge : undefined;
-      if (warn !== undefined) setEdge(warn);
+      if (now - s.edgeSince >= EDGE_WARN_MS) setEdge(s.edge);
 
-      // The on-screen pointer follows the index fingertip (hover mode only).
+      // The on-screen pointer follows the index fingertip.
       const span = 1 - HAND_MARGIN * 2;
       const tx = Math.min(Math.max((hand.x - HAND_MARGIN) / span, 0), 1) * window.innerWidth;
       const ty = Math.min(Math.max((hand.y - HAND_MARGIN) / span, 0), 1) * window.innerHeight;
-
       if (!s.hasPos) {
         s.x = tx;
         s.y = ty;
         s.hasPos = true;
-        clearHover(); // a hand takes over from the mouse; don't let a stale mouse hover win
+        pointerGone(); // a hand takes over from the mouse
         setHandVisible(true);
       }
       s.x += (tx - s.x) * (1 - SMOOTHING);
       s.y += (ty - s.y) * (1 - SMOOTHING);
-      s.lastActive = now;
-      if (s.mode !== "engaged") {
-        s.mode = "engaged";
-        setMode("engaged");
-      }
+      markPresent(now);
 
+      if (swiping || teach) return;
       if (cursor) {
         cursor.style.opacity = "1";
         cursor.style.transform = `translate(${s.x}px, ${s.y}px)`;
@@ -226,11 +293,9 @@ export default function Kiosk() {
       s.trail.push([s.x, s.y]);
       if (s.trail.length > TRAIL_LEN) s.trail.shift();
       trailRef.current?.setAttribute("points", s.trail.map((p) => p.join(",")).join(" "));
-
-      // Hover mode: whatever part the pointer is over pulls out.
-      if (!swiping && !teach) hoverAt(partAt(s.x, s.y), now);
+      pointAt(s.x, s.y, "hand", now);
     },
-    [onSwipe, clearHover, hoverAt],
+    [onSwipe, pointAt, pointerGone, markPresent],
   );
 
   const status = useHandTracking(videoRef, camCanvasRef, onHand, ACCENT, cameraOn);
@@ -239,44 +304,34 @@ export default function Kiosk() {
   const toggleSwipeMode = useCallback(() => {
     const on = !swipeModeRef.current;
     swipeModeRef.current = on;
-    const s = ix.current;
-    s.pinned = false;
-    s.swipedAt = 0;
-    clearHover();
+    pointerGone();
+    cursorRef.current?.style.setProperty("opacity", "0");
     if (!on) setTeaching(false);
     setSwipeMode(on);
-  }, [clearHover]);
+  }, [pointerGone]);
 
   const onTeachClose = useCallback((result: TeachResult) => {
     if (result) {
       const options = result === "reset" ? null : result;
-      saveSwipeOptions(options); // kept on this machine
+      saveSwipeOptions(options);
       swipes.current = new SwipeDetector(options ?? DEFAULT_SWIPE);
-      debugRef.current.taught = !!options;
     }
     setTeaching(false);
   }, []);
 
-  // ---- Mouse / touch (staff testing, touchscreens, camera off) -------------
+  // ---- Mouse / touch / keys -------------------------------------------------
   useEffect(() => {
     const move = (e: PointerEvent) => {
-      const s = ix.current;
-      if (s.hasPos) return; // a tracked hand takes priority
-      s.lastActive = performance.now();
-      if (s.mode !== "engaged") {
-        s.mode = "engaged";
-        setMode("engaged");
-      }
-      hoverAt(partAt(e.clientX, e.clientY), performance.now());
+      const now = performance.now();
+      markPresent(now);
+      if (ix.current.hasPos || e.pointerType === "touch") return; // a tracked hand takes priority
+      pointAt(e.clientX, e.clientY, "mouse", now);
     };
-    const down = (e: PointerEvent) => {
-      if ((e.target as Element).closest("button")) return;
-      const part = partAt(e.clientX, e.clientY);
-      ix.current.pinned = e.pointerType === "touch" && !!part;
-      activate(part);
-    };
+    const down = () => markPresent(performance.now());
     const key = (e: KeyboardEvent) => {
-      if (KEY_DIRS[e.key] && !teachSink.current) onSwipe(KEY_DIRS[e.key]); // arrow keys act like swipes, for testing
+      if ((e.target as Element).closest("input, textarea")) return; // typing an email
+      markPresent(performance.now());
+      if (KEY_DIRS[e.key] && !teachSink.current) onSwipe(KEY_DIRS[e.key]); // arrow keys act like swipes
       if (e.key === "t" && swipeModeRef.current) {
         setHasSaved(hasSavedSwipeOptions());
         setTeaching((v) => !v);
@@ -290,74 +345,75 @@ export default function Kiosk() {
       }
       if (e.key === "c") setShowSelf((v) => !v);
       if (e.key === "o") setCameraOn((v) => !v);
+      if (e.key === "r") resetVisitor(); // staff: start fresh for the next visitor
       if (e.key === "f") {
         if (document.fullscreenElement) document.exitFullscreen();
         else document.documentElement.requestFullscreen().catch(() => {});
       }
     };
-    const leave = () => clearHover();
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerdown", down);
     window.addEventListener("keydown", key);
-    document.documentElement.addEventListener("pointerleave", leave);
+    document.documentElement.addEventListener("pointerleave", pointerGone);
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerdown", down);
       window.removeEventListener("keydown", key);
-      document.documentElement.removeEventListener("pointerleave", leave);
+      document.documentElement.removeEventListener("pointerleave", pointerGone);
     };
-  }, [activate, hoverAt, clearHover, onSwipe]);
+  }, [pointAt, pointerGone, onSwipe, markPresent, resetVisitor]);
 
-  // ---- Animation loop: settle hover, ease pull / focus ----------------------
+  // ---- Frame loop: dwell, time per topic, attract loop, reset, explode easing ----
   useEffect(() => {
     let raf = 0;
     let last = performance.now();
-    const cur: Anim = { focus: 0, pull: { ...NO_PULL } };
+    let cur = TOPICS[ix.current.topic].explode;
 
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
       const s = ix.current;
-      const dt = Math.min((now - last) / 1000, 0.1);
+      const dt = Math.min(now - last, 100);
       last = now;
 
-      if (s.hoverPart && s.hoverPart !== s.active && now - s.hoverSince >= HOVER_SETTLE_MS) {
-        s.pinned = false;
-        activate(s.hoverPart);
-      } else if (!s.hoverPart && s.active && s.mode === "engaged" && !s.pinned && now - s.hoverSince >= UNHOVER_MS) {
-        activate(null);
-      } else if (s.swipedAt && s.active && now - s.swipedAt > DETAIL_HOLD_MS) {
-        // No swipe for a while: back to the whole shoe.
-        s.swipedAt = 0;
-        s.pinned = false;
-        activate(null);
-      }
-      // Nobody around: back to the whole, gently swaying shoe.
-      if (s.mode === "engaged" && !s.hasPos && now - s.lastActive > IDLE_MS) {
-        s.mode = "attract";
-        s.active = null;
-        s.pinned = false;
-        s.swipedAt = 0;
-        setMode("attract");
-        setActive(null);
+      // Held long enough over something: press it.
+      if (s.dwellEl && !s.dwellFired && now - s.dwellSince >= (Number(s.dwellEl.dataset.dwell) || 1000)) {
+        s.dwellFired = true;
+        s.dwellEl.removeAttribute("data-dwelling");
+        cursorRef.current?.removeAttribute("data-dwelling");
+        s.dwellEl.click();
       }
 
-      const ease = (from: number, to: number, tau: number) => {
-        const v = from + (to - from) * (1 - Math.exp(-dt / tau));
-        return Math.abs(to - v) < 0.002 ? to : v;
-      };
-      let changed = false;
-      const step = (from: number, to: number, tau: number) => {
-        const v = ease(from, to, tau);
-        if (v !== from) changed = true;
-        return v;
-      };
-      cur.focus = step(cur.focus, s.active ? 1 : 0, TAU_FOCUS);
-      for (const id of PART_ORDER) cur.pull[id] = step(cur.pull[id], id === s.active ? 1 : 0, TAU_PULL);
-      if (changed) setAnim({ focus: cur.focus, pull: { ...cur.pull } });
+      const idle = now - s.lastActive;
+      if (s.present) {
+        if (s.screen === "hub") {
+          const id = TOPICS[s.topic].id;
+          session.current.time[id] = (session.current.time[id] ?? 0) + dt;
+        }
+        if (idle > PRESENT_MS) {
+          s.present = false;
+          s.lastCycle = now;
+          setPresent(false);
+        }
+      } else if (s.screen === "hub" && session.current.start === 0 && now - s.lastCycle > ATTRACT_CYCLE_MS) {
+        // Nobody here (and no unfinished visit): flip to the next topic to draw people in.
+        s.lastCycle = now;
+        pickTopic(s.topic + 1, false);
+      }
+      if (session.current.start && !s.present && idle > (s.screen === "staff" ? RESET_STAFF_MS : RESET_MS)) {
+        s.lastCycle = now;
+        resetVisitor();
+      }
+
+      const target = TOPICS[s.topic].explode;
+      if (cur !== target) {
+        cur += (target - cur) * (1 - Math.exp(-dt / 1000 / TAU_EXPLODE));
+        if (Math.abs(target - cur) < 0.003) cur = target;
+        setExplode(Math.round(cur * 1000) / 1000);
+      }
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [activate]);
+  }, [pickTopic, resetVisitor]);
 
   // ---- Fit the 1280×720 artboard to any screen -----------------------------
   useEffect(() => {
@@ -367,149 +423,90 @@ export default function Kiosk() {
     return () => window.removeEventListener("resize", fit);
   }, []);
 
-  const shoeOpts = useMemo(() => ({ w: 700, accent: ACCENT, ...anim }), [anim]);
-  const slices = useMemo(() => buildShoe(shoeOpts), [shoeOpts]);
-  const hitLayers = useMemo(() => buildHitLayers(shoeOpts), [shoeOpts]);
-
-  const info = active ? PARTS[active] : PRODUCT.overview;
-  const engaged = mode === "engaged";
-  const motion = active ? "paused" : "running";
-  const headline = !engaged
-    ? camOk
-      ? "RAISE A HAND TO EXPLORE"
-      : "TOUCH TO EXPLORE"
-    : !camOk
-      ? "HOVER OVER A PART"
-      : !handVisible
-        ? swipeMode
-          ? "RAISE A HAND, THEN SWIPE"
-          : "RAISE A HAND TO EXPLORE"
-        : swipeMode
-          ? "SWIPE TO EXPLORE"
-          : "POINT AT A PART";
   const tip = camOk && handVisible && edge ? EDGE_TIPS[edge] : null;
-  const subline = !engaged
-    ? "Every part of this shoe has a story. Take a look inside."
-    : tip
-      ? tip
-      : !camOk
-        ? "Move over any part, or tap its name."
-        : swipeMode
-          ? "Up for the top, down for the sole, left for the heel, right for the toe."
-          : "Move over any part to pull it out.";
+  const guide = !present
+    ? {
+        title: camOk ? "RAISE A HAND TO START" : "TOUCH A TOPIC TO START",
+        sub: "Pick what you want to know, in any order",
+      }
+    : !camOk
+      ? { title: "TOUCH OR HOVER OVER A TOPIC", sub: "Pick in any order" }
+      : swipeMode
+        ? { title: handVisible ? "SWIPE LEFT FOR THE NEXT TOPIC" : "RAISE A HAND, THEN SWIPE", sub: "Swipe right to go back a topic" }
+        : { title: "HOLD YOUR HAND OVER A TOPIC", sub: "It opens after a second · pick in any order" };
 
-  const label = (id: PartId) => {
-    const on = id === active;
-    return (
-      <span key={id} data-part={id} className={styles.label} style={{ color: on ? "#FFFFFF" : undefined, fontWeight: on ? 700 : 500 }}>
-        <span className={styles.dot} style={{ background: ACCENT, boxShadow: `0 0 10px ${ACCENT}`, opacity: on ? 1 : 0 }} />
-        {PARTS[id].label}
-      </span>
-    );
-  };
-
+  const s = view;
   return (
     <div className={styles.viewport}>
       <div className={styles.stage} style={{ transform: `scale(${scale})` }}>
         <div aria-hidden="true" className={styles.frame} />
-        <div className={styles.eyebrow}>
-          {PRODUCT.name} / {PRODUCT.tagline}
-        </div>
 
-        <div className={styles.headline}>
-          <span key={headline} className={styles.headlineTitle}>
-            {headline}
-          </span>
-          <span className={styles.headlineSub} style={tip ? { color: ACCENT } : undefined}>
-            {subline}
-          </span>
-        </div>
-
-        {/* The whole shoe sways and floats while no part is open; it holds still while one is,
-            so the open piece doesn't drift out from under the cursor. */}
-        <div className={styles.shadow} style={{ animationPlayState: motion }} />
-        <div className={styles.shoeWrap} style={{ animationPlayState: motion }}>
-          <div className={styles.shoe} style={{ animationPlayState: motion }}>
-            {slices.map((sl, i) => (
-              <svg
-                key={i}
-                viewBox="0 -110 620 480"
-                width="700"
-                height="542"
-                aria-hidden="true"
-                className={styles.slice}
-                style={{ transform: `translateZ(${sl.z}px)` }}
-              >
-                {sl.parts.map((pt) => (
-                  <path
-                    key={pt.key}
-                    d={pt.d}
-                    transform={pt.tf}
-                    fill={pt.fill}
-                    stroke={pt.stroke}
-                    strokeWidth={pt.sw}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    opacity={pt.op}
-                  />
-                ))}
-              </svg>
-            ))}
-            {hitLayers.map((layer) => (
-              <svg
-                key={layer.key}
-                viewBox="0 -110 620 480"
-                width="700"
-                height="542"
-                aria-hidden="true"
-                className={styles.slice}
-                style={{ transform: `translateZ(${layer.z}px)` }}
-              >
-                {layer.paths.map((hp) => (
-                  <path
-                    key={hp.key}
-                    data-part={layer.part}
-                    d={hp.d}
-                    transform={hp.tf}
-                    fill="transparent"
-                    stroke="transparent"
-                    strokeWidth={hp.lace ? 18 : 6}
-                    strokeLinecap="round"
-                    className={styles.hit}
-                  />
-                ))}
-              </svg>
-            ))}
-          </div>
-        </div>
-
-        {camOk && (
-          <button
-            type="button"
-            className={styles.modeToggle}
-            role="switch"
-            aria-checked={swipeMode}
-            onClick={toggleSwipeMode}
-            title="Off: point at a part to open it. On: swipe up, down, left or right."
-          >
-            SWIPE
-            <span className={styles.switchTrack}>
-              <span className={styles.switchKnob} />
-            </span>
-          </button>
+        {screen === "hub" && (
+          <Hub
+            topic={topic}
+            onPick={(i) => pickTopic(i)}
+            hoverPart={hoverPart}
+            explode={explode}
+            accent={ACCENT}
+            guide={{ ...guide, sub: tip ?? guide.sub, tip: !!tip }}
+            attract={!present}
+            onTeam={() => go("staff")}
+            onBrochure={() => go("lead")}
+          />
+        )}
+        {screen === "staff" && (
+          <Staff
+            session={s}
+            onBack={() => go("hub")}
+            onLead={() => go("lead")}
+            onAccept={() => updateSession({ staffAccepted: true })}
+            onPass={() => updateSession({ staff: s.staff + 1, staffAccepted: false })}
+          />
+        )}
+        {screen === "lead" && (
+          <Lead session={s} onChange={updateSession} onSent={onSent} onBack={() => go("hub")} onTeam={() => go("staff")} />
         )}
 
-        <div className={styles.labelsLeft}>{LEFT_LABELS.map(label)}</div>
-        <div className={styles.labelsRight}>{RIGHT_LABELS.map(label)}</div>
-
-        <div key={active ?? "overview"} className={styles.info}>
-          <span className={styles.infoTitle}>{info.label}</span>
-          <span className={styles.infoBlurb}>{info.blurb}</span>
-          <span className={styles.infoSpecs}>{info.specs}</span>
+        {/* Kiosk controls (top-right, above the "Talk to our team" link). */}
+        <div className={styles.controls}>
+          <span
+            className={styles.statusDot}
+            data-status={status}
+            title={STATUS_TEXT[status]}
+            style={status === "tracking" ? { background: ACCENT, boxShadow: `0 0 10px ${ACCENT}` } : undefined}
+          />
+          <span className={styles.statusText}>{debug ?? (camOk ? (swipeMode ? "SWIPE ← →" : "POINT & HOLD") : STATUS_TEXT[status])}</span>
+          {camOk && (
+            <button
+              type="button"
+              className={styles.modeToggle}
+              role="switch"
+              aria-checked={swipeMode}
+              onClick={toggleSwipeMode}
+              title="Off: hold your hand over a topic to open it. On: swipe to flip through topics."
+            >
+              SWIPE
+              <span className={styles.switchTrack}>
+                <span className={styles.switchKnob} />
+              </span>
+            </button>
+          )}
+          {camOk && (
+            <button type="button" className={styles.camToggle} aria-pressed={showSelf} onClick={() => setShowSelf((v) => !v)}>
+              {showSelf ? "HIDE CAMERA VIEW" : "CAMERA VIEW"}
+            </button>
+          )}
+          <button
+            type="button"
+            className={styles.camToggle}
+            aria-pressed={!cameraOn}
+            data-off={cameraOn ? undefined : ""}
+            onClick={() => setCameraOn((v) => !v)}
+          >
+            {cameraOn ? "CAMERA OFF" : "CAMERA ON"}
+          </button>
         </div>
 
-        {/* Small self-view in the corner; while teaching, a large one beside the prompts so you can
-            see your hand stay inside the area the camera tracks reliably. */}
         <div
           className={teaching && camOk ? `${styles.cam} ${styles.camTeach}` : styles.cam}
           style={{ opacity: camOk && (showSelf || teaching) ? 1 : 0, ...(teaching ? { height: 456 / camAspect } : null) }}
@@ -530,42 +527,13 @@ export default function Kiosk() {
           )}
         </div>
 
-        <div className={styles.hint}>
-          <span
-            className={styles.statusDot}
-            data-status={status}
-            title={STATUS_TEXT[status]}
-            style={status === "tracking" ? { background: ACCENT, boxShadow: `0 0 10px ${ACCENT}` } : undefined}
-          />
-          {debug ?? (camOk ? (swipeMode ? "SWIPE ↑ ↓ ← →" : "POINT / HOVER") : STATUS_TEXT[status])}
-          {camOk && (
-            <button
-              type="button"
-              className={styles.camToggle}
-              aria-pressed={showSelf}
-              onClick={() => setShowSelf((v) => !v)}
-            >
-              {showSelf ? "HIDE CAMERA VIEW" : "SHOW CAMERA VIEW"}
-            </button>
-          )}
-          <button
-            type="button"
-            className={styles.camToggle}
-            aria-pressed={!cameraOn}
-            data-off={cameraOn ? undefined : ""}
-            onClick={() => setCameraOn((v) => !v)}
-          >
-            {cameraOn ? "TURN CAMERA OFF" : "TURN CAMERA ON"}
-          </button>
-        </div>
-
         {teaching && camOk && (
           <TeachSwipes sinkRef={teachSink} handVisible={handVisible} hasSaved={hasSaved} onClose={onTeachClose} />
         )}
       </div>
 
-      {/* Hand pointer for hover mode (swipe mode just responds to swipes, no pointer).
-          It lives outside the scaled stage so it maps 1:1 to the screen. */}
+      {/* Hand pointer (pointing mode). Outside the scaled stage so it maps 1:1 to the screen.
+          Its ring fills while the hand holds over something that can be pressed. */}
       {!swipeMode && camOk && (
         <>
           <svg className={styles.trail} aria-hidden="true">
@@ -575,6 +543,7 @@ export default function Kiosk() {
             <svg width="64" height="64" viewBox="-32 -32 64 64">
               <circle r="9" fill={ACCENT} />
               <circle r="22" fill="none" stroke={ACCENT} strokeWidth="3" className={styles.cursorRing} />
+              <circle r="22" fill="none" stroke="#FFFFFF" strokeWidth="4" strokeLinecap="round" strokeDasharray="138.3" className={styles.cursorDwell} />
             </svg>
           </div>
         </>
@@ -583,11 +552,17 @@ export default function Kiosk() {
   );
 }
 
+function clearDwell(s: { dwellEl: HTMLElement | null; dwellFired: boolean }) {
+  s.dwellEl?.removeAttribute("data-dwelling");
+  s.dwellEl = null;
+  s.dwellFired = false;
+}
+
 const STATUS_TEXT = {
-  off: "CAMERA OFF · TOUCH OR CLICK TO EXPLORE",
+  off: "CAMERA OFF · TOUCH OR CLICK",
   loading: "STARTING CAMERA…",
   ready: "CAMERA READY",
   tracking: "HAND DETECTED",
-  "no-camera": "NO CAMERA · TOUCH OR CLICK TO EXPLORE",
-  error: "TRACKING UNAVAILABLE · TOUCH OR CLICK TO EXPLORE",
+  "no-camera": "NO CAMERA · TOUCH OR CLICK",
+  error: "TRACKING UNAVAILABLE · TOUCH OR CLICK",
 } as const;

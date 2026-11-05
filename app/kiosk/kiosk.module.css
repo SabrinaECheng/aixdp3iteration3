@@ -1,4 +1,4 @@
-/* Values follow the "B · Centre stage" design reference (1280×720 artboard). */
+/* Playform kiosk. Values follow the R2 design references (1280×720 artboard). */
 
 .viewport {
   position: fixed;
@@ -50,60 +50,6 @@
   color: #d6dae6;
 }
 
-.headline {
-  position: absolute;
-  left: 31px;
-  top: 44px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.headlineTitle {
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  animation: rise 500ms ease-out both;
-}
-
-.headlineSub {
-  font-size: 15px;
-  color: #c9cedd;
-}
-
-.shadow {
-  position: absolute;
-  left: 380px;
-  top: 545px;
-  width: 540px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.45);
-  filter: blur(18px);
-  animation: shadow-float 5s ease-in-out infinite;
-}
-
-.shoeWrap {
-  position: absolute;
-  left: 290px;
-  top: 44px;
-  width: 700px;
-  height: 542px;
-  perspective: 1800px;
-  animation: float 5s ease-in-out infinite;
-}
-
-.shoe {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 700px;
-  height: 542px;
-  transform-style: preserve-3d;
-  transform: rotateX(-16deg) rotateY(-28deg);
-  animation: sway 9s ease-in-out infinite;
-}
-
 .slice {
   position: absolute;
   left: 0;
@@ -112,16 +58,8 @@
   pointer-events: none;
 }
 
-/* Invisible hit shapes; the visible slices never take pointer events. */
-.hit {
-  pointer-events: all;
-}
-
-/* Top-right switch: hands point at parts (off) or swipe (on). */
+/* Switch: hands point and hold (off) or swipe (on). */
 .modeToggle {
-  position: absolute;
-  right: 56px;
-  top: 14px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -166,82 +104,11 @@
   background: #131826;
 }
 
-.labelsLeft,
-.labelsRight {
-  position: absolute;
-  top: 220px;
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.22em;
-  color: #a9b0c3;
-}
-
-.labelsLeft {
-  left: 80px;
-  align-items: flex-start;
-}
-
-.labelsRight {
-  right: 88px;
-  align-items: flex-end;
-}
-
-/* Generous hit area so pointing at a label also works. */
-.label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  margin: -8px -12px;
-  transition: color 200ms ease;
-}
-
-.dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  transition: opacity 200ms ease;
-}
-
-.labelsLeft .dot {
-  order: 1;
-}
-
-.info {
-  position: absolute;
-  left: 26px;
-  bottom: 26px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  animation: rise 450ms ease-out both;
-}
-
-.infoTitle {
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-}
-
-.infoBlurb {
-  font-size: 16px;
-  color: #c9cedd;
-}
-
-.infoSpecs {
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.18em;
-  color: #a9b0c3;
-}
-
 .cam {
   position: absolute;
-  right: 32px;
-  bottom: 60px;
+  z-index: 5;
+  right: 72px;
+  top: 112px;
   width: 176px;
   height: 99px;
   border-radius: 12px;
@@ -314,19 +181,6 @@ video.camVideo {
   padding-right: 520px;
 }
 
-.hint {
-  position: absolute;
-  right: 32px;
-  bottom: 30px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  color: #d6dae6;
-}
-
 .statusDot {
   width: 6px;
   height: 6px;
@@ -353,7 +207,6 @@ video.camVideo {
 }
 
 .camToggle {
-  margin-left: 6px;
   padding: 6px 12px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 999px;
@@ -474,39 +327,6 @@ video.camVideo {
   transform: scale(1);
 }
 
-@keyframes sway {
-  0%,
-  100% {
-    transform: rotateX(-14deg) rotateY(-42deg) rotateZ(1deg);
-  }
-  50% {
-    transform: rotateX(-18deg) rotateY(-14deg) rotateZ(-1deg);
-  }
-}
-
-@keyframes float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-12px);
-  }
-}
-
-/* The shadow tightens and lightens as the shoe floats up. */
-@keyframes shadow-float {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(0.88);
-    opacity: 0.7;
-  }
-}
-
 @keyframes rise {
   from {
     opacity: 0;
@@ -521,5 +341,900 @@ video.camVideo {
 @keyframes blink {
   50% {
     opacity: 0.3;
+  }
+}
+
+/* ---- Shared ------------------------------------------------------------- */
+
+.controls {
+  position: absolute;
+  right: 56px;
+  top: 12px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  color: #a9b0c3;
+}
+
+.statusText {
+  margin-right: 4px;
+}
+
+.kicker {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  color: #a9b0c3;
+}
+
+/* Hold-to-press feedback: a bar fills along the bottom of a button while a hand holds over it. */
+.dwellBar {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 6px;
+  height: 2px;
+  border-radius: 2px;
+  background: #bfd8ff;
+  transform: scaleX(0);
+  transform-origin: left;
+  pointer-events: none;
+}
+
+[data-dwelling] > .dwellBar {
+  animation: dwell-bar var(--dwell, 1200ms) linear forwards;
+}
+
+.guide {
+  position: absolute;
+  left: 26px;
+  bottom: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.guideTitle {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  animation: rise 450ms ease-out both;
+}
+
+.guideTitleSmall {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.guideSub {
+  font-size: 15px;
+  color: #c9cedd;
+}
+
+/* Attract loop: which page of the "pamphlet" is showing. */
+.attractDots {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.attractDots span {
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.18);
+  transition: background 300ms ease;
+}
+
+.attractDots span[data-on] {
+  background: #bfd8ff;
+}
+
+.chips {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ---- Topic hub ------------------------------------------------------------ */
+
+.teamLink {
+  position: absolute;
+  right: 72px;
+  top: 52px;
+  min-height: 48px;
+  padding: 0 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(191, 216, 255, 0.6);
+  background: rgba(19, 24, 38, 0.6);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+  transition: background 200ms ease;
+}
+
+.teamLink:hover,
+.teamLink[data-dwelling] {
+  background: rgba(191, 216, 255, 0.12);
+}
+
+.topics {
+  position: absolute;
+  left: 64px;
+  top: 130px;
+  width: 290px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.topicsLabel {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  color: #a9b0c3;
+  padding: 0 0 6px 18px;
+}
+
+.topic {
+  min-height: 68px;
+  padding: 0 18px;
+  border-radius: 18px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #c9cedd;
+  font: inherit;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+  transition: background 200ms ease, border-color 200ms ease, color 200ms ease;
+}
+
+.topic[data-current] {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(191, 216, 255, 0.55);
+  color: #ffffff;
+}
+
+.topic[data-dwelling] {
+  background: rgba(255, 255, 255, 0.04);
+  color: #ffffff;
+}
+
+.topicNum {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+.topicNum svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: rotate(-90deg);
+}
+
+.dwellRing {
+  stroke-dashoffset: 113;
+  opacity: 0;
+}
+
+.topic[data-dwelling] .dwellRing {
+  opacity: 1;
+  animation: dwell-ring var(--dwell, 900ms) linear forwards;
+}
+
+.topicLabel {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+}
+
+.topic[data-current] .topicLabel {
+  font-weight: 700;
+}
+
+.modelShadow {
+  position: absolute;
+  left: 470px;
+  top: 470px;
+  width: 340px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  filter: blur(18px);
+}
+
+.modelWrap {
+  position: absolute;
+  left: 400px;
+  top: 70px;
+  width: 460px;
+  height: 495px;
+  perspective: 1600px;
+  pointer-events: none;
+}
+
+.model {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 460px;
+  height: 495px;
+  transform-style: preserve-3d;
+  transform: rotateX(-14deg) rotateY(-30deg);
+  animation: sway 14s ease-in-out infinite;
+}
+
+.panel {
+  position: absolute;
+  right: 80px;
+  top: 150px;
+  width: 350px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: rise 450ms ease-out both;
+}
+
+.panelKicker {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  color: #a9b0c3;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #ffffff;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 11px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  transition: color 150ms ease;
+}
+
+.rowA {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.rowB {
+  font-size: 14px;
+  color: #a9b0c3;
+}
+
+.brochureLink {
+  position: absolute;
+  right: 32px;
+  bottom: 22px;
+  min-height: 44px;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.brochureLink .dwellBar,
+.backLink .dwellBar {
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+}
+
+/* ---- Ask our team ------------------------------------------------------------ */
+
+.staffBlock {
+  position: absolute;
+  left: 96px;
+  top: 140px;
+  width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  animation: rise 450ms ease-out both;
+}
+
+.staffWho {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: #f8f3f1;
+  color: #131826;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  box-shadow: 0 0 0 8px rgba(191, 216, 255, 0.15);
+}
+
+.staffWhoText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.staffName {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.staffHeading {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  line-height: 1.3;
+}
+
+.staffBody {
+  font-size: 17px;
+  line-height: 1.5;
+  color: #c9cedd;
+}
+
+.staffButtons {
+  display: flex;
+  gap: 12px;
+  padding-top: 6px;
+}
+
+.btnFilled,
+.btnOutline {
+  position: relative;
+  min-height: 52px;
+  padding: 0 22px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+}
+
+.btnFilled {
+  border: none;
+  background: #f8f3f1;
+  color: #131826;
+}
+
+.btnFilled .dwellBar {
+  background: #2b5bd7;
+}
+
+.btnOutline {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: transparent;
+  color: #ffffff;
+}
+
+.btnOutline:hover,
+.btnOutline[data-dwelling] {
+  border-color: rgba(191, 216, 255, 0.7);
+}
+
+.teamLink,
+.brochureLink,
+.backLink {
+  position: absolute;
+}
+
+.tabletCaption {
+  position: absolute;
+  right: 96px;
+  top: 96px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  color: #a9b0c3;
+}
+
+.tablet {
+  position: absolute;
+  right: 96px;
+  top: 124px;
+  width: 440px;
+  padding: 14px;
+  border-radius: 32px;
+  background: #0c0f18;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-sizing: border-box;
+}
+
+.tabletCard {
+  border-radius: 20px;
+  background: #f4f2f0;
+  color: #161a26;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tabletHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.tabletKicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: #5a5f70;
+}
+
+.tabletNow {
+  font-size: 12px;
+  font-weight: 600;
+  color: #2b5bd7;
+  white-space: nowrap;
+}
+
+.tabletWho {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tabletName {
+  font-size: 20px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.tabletSub {
+  font-size: 14px;
+  color: #4a4f60;
+}
+
+.tabletExplored {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tabletExplored .chips {
+  gap: 6px;
+}
+
+.tabletChip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #e2e6f2;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.tabletEmpty {
+  font-size: 13px;
+  color: #5a5f70;
+}
+
+.tabletRows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid #d9d6d2;
+  font-size: 14px;
+}
+
+.tabletRows > div {
+  display: flex;
+  justify-content: space-between;
+}
+
+.tabletRows span {
+  color: #4a4f60;
+}
+
+.tabletRows b {
+  font-weight: 600;
+}
+
+.tabletButtons {
+  display: flex;
+  gap: 8px;
+}
+
+.tabletPrimary,
+.tabletSecondary {
+  flex: 1;
+  min-height: 48px;
+  border-radius: 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  cursor: pointer;
+}
+
+.tabletPrimary {
+  border: none;
+  background: #161a26;
+  color: #ffffff;
+}
+
+.tabletPrimary:disabled {
+  background: #2b5bd7;
+  cursor: default;
+}
+
+.tabletSecondary {
+  border: 1px solid #b9b6b2;
+  background: transparent;
+  color: #161a26;
+}
+
+/* ---- Take it with you (lead capture) ------------------------------------------ */
+
+.backLink {
+  right: 72px;
+  top: 52px;
+  min-height: 48px;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  display: flex;
+  align-items: center;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.leadHead {
+  position: absolute;
+  left: 96px;
+  top: 110px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.leadTitle {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.leadGrid {
+  position: absolute;
+  left: 96px;
+  right: 96px;
+  top: 200px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.leadCard {
+  position: relative;
+  min-height: 270px;
+  padding: 28px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(19, 24, 38, 0.45);
+  color: #eef0f6;
+  font: inherit;
+  text-align: left;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: background 200ms ease, border-color 200ms ease;
+}
+
+form.leadCard {
+  cursor: default;
+  gap: 12px;
+}
+
+.leadCard[data-selected] {
+  border-color: rgba(191, 216, 255, 0.6);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.leadCard[data-dwelling] {
+  border-color: rgba(191, 216, 255, 0.6);
+}
+
+.leadCard .dwellBar {
+  left: 28px;
+  right: 28px;
+  bottom: 14px;
+}
+
+.leadCardTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.fastest {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #bfd8ff;
+  color: #131826;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+
+.leadCardTitle {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.leadCardBody {
+  font-size: 16px;
+  line-height: 1.5;
+  color: #c9cedd;
+}
+
+.scanBar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: #bfd8ff;
+  box-shadow: 0 0 16px #bfd8ff;
+  animation: scan 1.2s ease-in-out infinite alternate;
+}
+
+.qr {
+  width: 84px;
+  height: 84px;
+  border-radius: 12px;
+  background: #f8f3f1;
+  color: #131826;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+.input {
+  min-height: 56px;
+  padding: 0 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  font: inherit;
+  font-size: 17px;
+  user-select: text;
+}
+
+.input[aria-invalid] {
+  border-color: #f5c9d6;
+}
+
+.inputSmall {
+  min-height: 48px;
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 16px;
+}
+
+.inputLabel {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  color: #a9b0c3;
+}
+
+.sendBtn {
+  min-height: 44px;
+  border: none;
+  border-radius: 999px;
+  background: #f8f3f1;
+  color: #131826;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+}
+
+.leadFoot {
+  position: absolute;
+  left: 96px;
+  right: 96px;
+  top: 500px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.chipsLabel {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  color: #a9b0c3;
+  margin-right: 6px;
+}
+
+.chip {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(191, 216, 255, 0.5);
+  font-size: 14px;
+}
+
+.check {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 4px;
+  font-size: 15px;
+  color: #eef0f6;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.check input {
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  accent-color: #bfd8ff;
+}
+
+.consent {
+  position: absolute;
+  left: 96px;
+  right: 96px;
+  top: 586px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #a9b0c3;
+}
+
+.sentBlock {
+  position: absolute;
+  left: 96px;
+  top: 150px;
+  width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  animation: rise 450ms ease-out both;
+}
+
+.sentCheck {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: #bfd8ff;
+  color: #131826;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  font-weight: 700;
+  box-shadow: 0 0 0 8px rgba(191, 216, 255, 0.15);
+}
+
+/* ---- Hand pointer dwell ---------------------------------------------------- */
+
+.cursorDwell {
+  stroke-dashoffset: 138.3;
+  transform: rotate(-90deg);
+  opacity: 0;
+}
+
+.cursor[data-dwelling] .cursorDwell {
+  opacity: 1;
+  animation: cursor-dwell var(--dwell, 1000ms) linear forwards;
+}
+
+@keyframes sway {
+  0%,
+  100% {
+    transform: rotateX(-14deg) rotateY(-46deg);
+  }
+  50% {
+    transform: rotateX(-14deg) rotateY(8deg);
+  }
+}
+
+@keyframes dwell-ring {
+  from {
+    stroke-dashoffset: 113;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes cursor-dwell {
+  from {
+    stroke-dashoffset: 138.3;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes dwell-bar {
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes scan {
+  from {
+    top: 0;
+  }
+  to {
+    top: calc(100% - 2px);
   }
 }

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Kiosk from "./kiosk/Kiosk";
 
 export const metadata: Metadata = {
-  title: "Stride One — Interactive Exhibit",
-  description: "Touch-free expo kiosk: point at a part of the shoe to learn what it does.",
+  title: "Playform — Interactive Booth Kiosk",
+  description: "Playform: a touch-free booth kiosk that answers the general questions, hands visitors to sales staff and captures leads.",
 };
 
 export default function Home() {
