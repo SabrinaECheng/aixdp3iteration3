@@ -1,4 +1,7 @@
-# Stride One — touch-free expo kiosk
+# Stride One — touch-free expo kiosk (iteration 3)
+
+Iteration 3 starts from iteration 2 ([kkuang-max/p3iteration2](https://github.com/kkuang-max/p3iteration2)), with its
+full history.
 
 A booth kiosk prototype that demos a product while staff are busy. A webcam tracks
 the visitor's hand with [Google MediaPipe Hand Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker);
